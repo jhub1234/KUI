@@ -70,71 +70,94 @@
                     </div>
 
                     <div class="p-5 flex-1 bg-gray-50/50">
-                        <ul class="space-y-2 mb-4">
-                            <li v-for="node in getNodesByIp(vps.ip)" :key="node.id" class="flex justify-between items-center text-sm bg-white p-3 border rounded shadow-sm">
-                                <div>
-                                    <span class="font-bold">{{ node.protocol }} <span class="font-mono text-gray-500 text-xs">#{{ node.port }}</span></span>
-                                    <div v-if="node.protocol === 'Reality'" class="text-xs text-gray-500 mt-1 font-mono">SNI: {{ node.sni }}</div>
-                                    <div v-if="node.protocol === 'Hysteria2'" class="text-xs text-gray-500 mt-1 font-mono">SNI: 动态小众域名 (无需配置)</div>
-                                    <div v-if="node.protocol === 'dokodemo-door'" class="text-xs text-blue-600 mt-1">
-                                        转发至 ➔ {{ node.relay_type === 'internal' ? '内部节点ID: '+node.target_id.slice(0,6) : node.target_ip+':'+node.target_port }}
+                        <ul class="space-y-4 mb-4">
+                            <li v-for="node in getNodesByIp(vps.ip)" :key="node.id" class="flex flex-col bg-white p-4 border rounded shadow-sm relative">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold">{{ node.protocol }} <span class="font-mono text-gray-500 text-xs">#{{ node.port }}</span></span>
+                                            <span v-if="node.enable === 0" class="text-[10px] bg-gray-200 text-gray-600 px-1.5 rounded">已停用</span>
+                                            <span v-else-if="node.traffic_limit > 0 && node.traffic_used >= node.traffic_limit" class="text-[10px] bg-red-100 text-red-600 px-1.5 rounded">流量超限</span>
+                                            <span v-else-if="node.expire_time > 0 && node.expire_time < Date.now()" class="text-[10px] bg-red-100 text-red-600 px-1.5 rounded">已过期</span>
+                                            <span v-else class="text-[10px] bg-green-100 text-green-600 px-1.5 rounded">运行中</span>
+                                        </div>
+                                        <div v-if="node.expire_time > 0" class="text-[10px] text-gray-400 mt-1">到期: {{ formatDate(node.expire_time) }}</div>
+                                    </div>
+                                    
+                                    <div class="flex gap-2">
+                                        <button @click="toggleNode(node.id, node.enable === 1 ? 0 : 1)" class="text-xs px-2 py-1 rounded" :class="node.enable === 1 ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'">
+                                            {{ node.enable === 1 ? '停用' : '启用' }}
+                                        </button>
+                                        <button @click="deleteNode(node.id)" class="text-red-500 text-xs px-2 py-1 bg-red-50 rounded hover:bg-red-100">删除</button>
                                     </div>
                                 </div>
-                                <button @click="deleteNode(node.id)" class="text-red-500 text-xs px-2 py-1 bg-red-50 rounded hover:bg-red-100">删除</button>
+                                
+                                <div class="w-full bg-gray-100 rounded-full h-1.5 mt-2">
+                                    <div :class="(node.traffic_limit > 0 && node.traffic_used >= node.traffic_limit) ? 'bg-red-500' : 'bg-black'" class="h-1.5 rounded-full" :style="{ width: getTrafficPercent(node.traffic_used, node.traffic_limit) + '%' }"></div>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                                    <span>已用: {{ formatBytes(node.traffic_used) }}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span>{{ node.traffic_limit > 0 ? '上限: ' + formatBytes(node.traffic_limit) : '无上限' }}</span>
+                                        <button v-if="node.traffic_used > 0" @click="resetTraffic(node.id)" class="text-blue-500 hover:underline">清零</button>
+                                    </div>
+                                </div>
                             </li>
                             <li v-if="getNodesByIp(vps.ip).length === 0" class="text-center text-gray-400 text-sm py-2">暂无挂载规则</li>
                         </ul>
 
-                        <div class="bg-white p-3 border rounded border-dashed">
+                        <div class="bg-white p-3 border rounded border-dashed mt-4">
                             <div class="flex gap-2 mb-2">
                                 <select v-model="newNodeParams[vps.ip].protocol" class="border text-sm p-2 rounded flex-1 bg-gray-50 outline-none">
-                                    <option value="VLESS">VLESS (通用)</option>
-                                    <option value="Reality">Reality (防封推荐)</option>
-                                    <option value="Hysteria2">Hysteria 2 (极速 UDP)</option>
-                                    <option value="dokodemo-door">任意门 (端口转发/链式代理)</option>
+                                    <option value="VLESS">VLESS</option>
+                                    <option value="Reality">Reality</option>
+                                    <option value="Hysteria2">Hysteria 2</option>
+                                    <option value="dokodemo-door">转发(任意门)</option>
                                 </select>
-                                <input v-model="newNodeParams[vps.ip].port" type="number" placeholder="监听端口" class="border text-sm p-2 rounded w-24 bg-gray-50 outline-none">
+                                <input v-model="newNodeParams[vps.ip].port" type="number" placeholder="端口" class="border text-sm p-2 rounded w-20 bg-gray-50 outline-none">
                             </div>
                             
-                            <div v-if="newNodeParams[vps.ip].protocol === 'Reality'" class="bg-gray-50 p-3 rounded mb-2 text-sm border">
-                                <label class="block text-xs text-gray-700 mb-1 font-bold">伪装域名 (SNI)</label>
-                                <input v-model="newNodeParams[vps.ip].sni" placeholder="例如: gateway.icloud.com" class="w-full border p-2 rounded outline-none">
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <div class="bg-gray-50 p-2 rounded border">
+                                    <label class="block text-[10px] text-gray-500 font-bold mb-1">配额 (GB, 0无限)</label>
+                                    <input v-model="newNodeParams[vps.ip].traffic_limit_gb" type="number" min="0" class="w-full text-sm p-1 border rounded outline-none" placeholder="0">
+                                </div>
+                                <div class="bg-gray-50 p-2 rounded border">
+                                    <label class="block text-[10px] text-gray-500 font-bold mb-1">到期时间 (留空永久)</label>
+                                    <input v-model="newNodeParams[vps.ip].expire_date" type="date" class="w-full text-sm p-1 border rounded outline-none text-gray-600">
+                                </div>
                             </div>
 
-                            <div v-if="newNodeParams[vps.ip].protocol === 'dokodemo-door'" class="bg-blue-50 p-3 rounded mb-2 text-sm border border-blue-100 space-y-3">
-                                <div class="flex gap-4 text-blue-800 font-bold text-xs">
-                                    <label><input type="radio" v-model="newNodeParams[vps.ip].relay_type" value="external"> 纯端口转发</label>
-                                    <label><input type="radio" v-model="newNodeParams[vps.ip].relay_type" value="internal"> 内部链式代理</label>
+                            <div v-if="newNodeParams[vps.ip].protocol === 'Reality'" class="bg-gray-50 p-2 rounded mb-2 text-sm border">
+                                <input v-model="newNodeParams[vps.ip].sni" placeholder="伪装域名: gateway.icloud.com" class="w-full border p-1.5 rounded outline-none text-xs">
+                            </div>
+
+                            <div v-if="newNodeParams[vps.ip].protocol === 'dokodemo-door'" class="bg-blue-50 p-2 rounded mb-2 text-sm border border-blue-100">
+                                <div class="flex gap-4 text-blue-800 font-bold text-[10px] mb-2">
+                                    <label><input type="radio" v-model="newNodeParams[vps.ip].relay_type" value="external"> 公网转发</label>
+                                    <label><input type="radio" v-model="newNodeParams[vps.ip].relay_type" value="internal"> 内部链式</label>
                                 </div>
-                                
                                 <div v-if="newNodeParams[vps.ip].relay_type === 'external'" class="flex gap-2">
-                                    <input v-model="newNodeParams[vps.ip].target_ip" placeholder="目标 IP" class="border p-2 rounded flex-1 outline-none">
-                                    <input v-model="newNodeParams[vps.ip].target_port" placeholder="端口" class="border p-2 rounded w-20 outline-none">
+                                    <input v-model="newNodeParams[vps.ip].target_ip" placeholder="目标 IP" class="border p-1.5 rounded flex-1 outline-none text-xs">
+                                    <input v-model="newNodeParams[vps.ip].target_port" placeholder="端口" class="border p-1.5 rounded w-16 outline-none text-xs">
                                 </div>
-                                
-                                <div v-if="newNodeParams[vps.ip].relay_type === 'internal'">
-                                    <select v-model="newNodeParams[vps.ip].target_id" class="border p-2 rounded w-full outline-none">
-                                        <option value="">-- 选择集群内的目标落地节点 --</option>
-                                        <option v-for="n in getAllOtherNodes(vps.ip)" :value="n.id">
-                                            {{ getVpsName(n.vps_ip) }} - {{ n.protocol }}:{{ n.port }}
-                                        </option>
-                                    </select>
-                                </div>
+                                <select v-if="newNodeParams[vps.ip].relay_type === 'internal'" v-model="newNodeParams[vps.ip].target_id" class="border p-1.5 rounded w-full outline-none text-xs">
+                                    <option value="">-- 选择目标节点 --</option>
+                                    <option v-for="n in getAllOtherNodes(vps.ip)" :value="n.id">{{ getVpsName(n.vps_ip) }} - {{ n.protocol }}:{{ n.port }}</option>
+                                </select>
                             </div>
 
-                            <button @click="addNode(vps.ip)" class="w-full bg-gray-800 text-white text-sm py-2 rounded font-bold hover:bg-black transition">生成并下发配置</button>
+                            <button @click="addNode(vps.ip)" class="w-full bg-gray-800 text-white text-sm py-2 rounded font-bold hover:bg-black transition">配置下发</button>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 mt-auto p-4 bg-gray-50 border-t">
                         <div class="bg-black p-3 rounded cursor-pointer group col-span-2 md:col-span-1" @click="copyCommand(generateCmd(vps.ip))">
-                            <div class="text-[10px] text-gray-400 mb-1 uppercase tracking-wider">初始化 / 同步指令</div>
+                            <div class="text-[10px] text-gray-400 mb-1 uppercase tracking-wider">终端部署指令</div>
                             <div class="text-green-400 font-mono text-xs truncate">bash <(curl -sL ...</div>
                         </div>
-                        
                         <div class="bg-blue-600 p-3 rounded cursor-pointer hover:bg-blue-700 transition flex items-center justify-center text-white font-bold shadow-sm col-span-2 md:col-span-1" @click="copyCommand(generateSubLink(vps.ip), '订阅链接已复制！')">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                            复制该机订阅
+                            复制单机订阅
                         </div>
                     </div>
                 </div>
@@ -148,20 +171,13 @@
 
     <script>
         const { createApp, ref, reactive, onMounted } = Vue;
-
         const toBase64Url = (uint8Array) => {
-            let str = '';
-            for (let i = 0; i < uint8Array.length; i++) str += String.fromCharCode(uint8Array[i]);
+            let str = ''; for (let i = 0; i < uint8Array.length; i++) str += String.fromCharCode(uint8Array[i]);
             return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         };
-
         const generateRealityKeys = () => {
             const keypair = nacl.box.keyPair();
-            return {
-                privateKey: toBase64Url(keypair.secretKey),
-                publicKey: toBase64Url(keypair.publicKey),
-                shortId: crypto.randomUUID().replace(/-/g, '').substring(0, 16)
-            };
+            return { privateKey: toBase64Url(keypair.secretKey), publicKey: toBase64Url(keypair.publicKey), shortId: crypto.randomUUID().replace(/-/g, '').substring(0, 16) };
         };
 
         createApp({
@@ -176,27 +192,35 @@
                 const currentDomain = window.location.origin;
 
                 const isOnline = (lastReport) => lastReport && (Date.now() - lastReport) < 10 * 60 * 1000;
+                
+                // 工具函数
+                const formatBytes = (bytes) => {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'], i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                };
+                const formatDate = (ts) => {
+                    if (!ts) return '永久';
+                    const d = new Date(ts);
+                    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                };
+                const getTrafficPercent = (used, limit) => {
+                    if (limit === 0) return 0;
+                    return Math.min((used / limit) * 100, 100);
+                };
 
                 const fetchApi = async (url, options = {}) => {
                     options.headers = { ...options.headers, 'Authorization': token.value };
                     const res = await fetch(url, options);
-                    if (res.status === 401) {
-                        logout();
-                        throw new Error('Unauthorized');
-                    }
+                    if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
                     return res;
                 };
 
                 const login = async () => {
                     const res = await fetch('/api/login', { method: 'POST', body: JSON.stringify({ password: password.value }) });
-                    if (res.ok) {
-                        token.value = password.value;
-                        localStorage.setItem('kui_token', token.value);
-                        isLoggedIn.value = true;
-                        refreshData();
-                    } else alert('密码错误');
+                    if (res.ok) { token.value = password.value; localStorage.setItem('kui_token', token.value); isLoggedIn.value = true; refreshData(); } 
+                    else alert('密码错误');
                 };
-
                 const logout = () => { localStorage.removeItem('kui_token'); isLoggedIn.value = false; token.value = password.value = ''; };
 
                 const refreshData = async () => {
@@ -207,7 +231,7 @@
                         nodes.value = data.nodes || [];
                         servers.value.forEach(s => {
                             if(!newNodeParams[s.ip]) {
-                                newNodeParams[s.ip] = { protocol: 'VLESS', port: 443, sni: 'www.apple.com', relay_type: 'external', target_ip: '', target_port: '', target_id: '' };
+                                newNodeParams[s.ip] = { protocol: 'VLESS', port: 443, sni: 'www.apple.com', relay_type: 'external', traffic_limit_gb: '', expire_date: '' };
                             }
                         });
                     } catch(e) {}
@@ -216,15 +240,10 @@
                 const addVps = async () => {
                     if(!newVps.value.ip || !newVps.value.name) return;
                     await fetchApi('/api/vps', { method: 'POST', body: JSON.stringify(newVps.value) });
-                    newVps.value = { name: '', ip: '' };
-                    refreshData();
+                    newVps.value = { name: '', ip: '' }; refreshData();
                 };
-
                 const deleteVps = async (ip) => {
-                    if(confirm('删除机器将清理其下所有节点配置！')) {
-                        await fetchApi('/api/vps?ip=' + ip, { method: 'DELETE' });
-                        refreshData();
-                    }
+                    if(confirm('删除机器将清理其下所有节点配置！')) { await fetchApi('/api/vps?ip=' + ip, { method: 'DELETE' }); refreshData(); }
                 };
 
                 const getNodesByIp = (ip) => nodes.value.filter(n => n.vps_ip === ip);
@@ -235,47 +254,43 @@
                     const params = newNodeParams[ip];
                     if(!params.port) return alert('端口不能为空');
                     
+                    let limitBytes = params.traffic_limit_gb ? Math.floor(parseFloat(params.traffic_limit_gb) * 1024 * 1024 * 1024) : 0;
+                    let expireTs = params.expire_date ? new Date(params.expire_date).getTime() : 0;
+
                     let payload = { 
-                        id: Date.now().toString(), uuid: crypto.randomUUID(), vps_ip: ip, protocol: params.protocol, port: params.port 
+                        id: Date.now().toString(), uuid: crypto.randomUUID(), vps_ip: ip, protocol: params.protocol, port: params.port,
+                        traffic_limit: limitBytes, expire_time: expireTs
                     };
 
                     if (params.protocol === 'Reality') {
                         const keys = generateRealityKeys();
-                        payload.sni = params.sni;
-                        payload.private_key = keys.privateKey;
-                        payload.public_key = keys.publicKey;
-                        payload.short_id = keys.shortId;
+                        payload.sni = params.sni; payload.private_key = keys.privateKey; payload.public_key = keys.publicKey; payload.short_id = keys.shortId;
                     } else if (params.protocol === 'Hysteria2') {
-                        const nicheDomains = ["www.chiba-u.ac.jp", "www.tsukuba.ac.jp", "www.jma.go.jp", "www.epfl.ch", "www.su.se", "www.tu-berlin.de", "www.cnrs.fr"];
+                        const nicheDomains = ["www.chiba-u.ac.jp", "www.tsukuba.ac.jp", "www.jma.go.jp", "www.epfl.ch", "www.su.se", "www.tu-berlin.de"];
                         payload.sni = nicheDomains[Math.floor(Math.random() * nicheDomains.length)];
                     } else if (params.protocol === 'dokodemo-door') {
                         payload.relay_type = params.relay_type;
-                        if (params.relay_type === 'external') {
-                            payload.target_ip = params.target_ip;
-                            payload.target_port = params.target_port;
-                        } else {
-                            payload.target_id = params.target_id;
-                        }
+                        if (params.relay_type === 'external') { payload.target_ip = params.target_ip; payload.target_port = params.target_port; } 
+                        else { payload.target_id = params.target_id; }
                     }
 
                     await fetchApi('/api/nodes', { method: 'POST', body: JSON.stringify(payload) });
                     refreshData();
                 };
 
-                const deleteNode = async (id) => {
-                    await fetchApi('/api/nodes?id=' + id, { method: 'DELETE' });
-                    refreshData();
-                };
+                const deleteNode = async (id) => { await fetchApi('/api/nodes?id=' + id, { method: 'DELETE' }); refreshData(); };
+                
+                // 3X-UI 操作功能
+                const toggleNode = async (id, status) => { await fetchApi('/api/nodes', { method: 'PUT', body: JSON.stringify({ id: id, enable: status }) }); refreshData(); };
+                const resetTraffic = async (id) => { if(confirm('确定清空该节点的已用流量？')) { await fetchApi('/api/nodes', { method: 'PUT', body: JSON.stringify({ id: id, reset_traffic: true }) }); refreshData(); } };
 
                 const generateCmd = (ip) => `bash <(curl -sL https://raw.githubusercontent.com/a62169722/KUI/main/vps/kui.sh) --api "${currentDomain}" --ip "${ip}" --token "${token.value}"`;
-                
                 const generateSubLink = (ip) => `${currentDomain}/api/sub?ip=${ip}&token=${token.value}`;
-
                 const copyCommand = (text, msg = '部署指令已复制！') => navigator.clipboard.writeText(text).then(() => alert(msg));
 
                 onMounted(() => { if (token.value) { isLoggedIn.value = true; refreshData(); } });
 
-                return { isLoggedIn, password, login, logout, servers, nodes, newVps, newNodeParams, isOnline, refreshData, addVps, deleteVps, getNodesByIp, getAllOtherNodes, getVpsName, addNode, deleteNode, generateCmd, generateSubLink, copyCommand };
+                return { isLoggedIn, password, login, logout, servers, nodes, newVps, newNodeParams, isOnline, formatBytes, formatDate, getTrafficPercent, refreshData, addVps, deleteVps, getNodesByIp, getAllOtherNodes, getVpsName, addNode, deleteNode, toggleNode, resetTraffic, generateCmd, generateSubLink, copyCommand };
             }
         }).mount('#app');
     </script>
