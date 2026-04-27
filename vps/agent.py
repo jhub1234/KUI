@@ -105,56 +105,49 @@ def fetch_and_apply_configs():
     return []
 
 # =====================================================================
-# 🚀 终极版 WARP 自动部署引擎：将我们手动测试成功的命令全部自动化封装
+# 🚀 还原为最稳定的官方 warp-cli 部署方案，包含完美自动化安装命令
 # =====================================================================
 def check_and_deploy_warp():
-    """安全、防卡死、全自动的 WARP 部署与状态维持引擎"""
+    """安全、防卡死的 WARP 官方客户端自动部署与状态检查"""
     try:
-        # 1. 检查是否安装，未安装则执行我们实测成功的 Debian 源添加与安装流程
+        # 1. 检测是否安装，如果没有安装，就执行我们手动跑通的这套 Debian 安装指令
         if subprocess.run("command -v warp-cli", shell=True, stderr=subprocess.DEVNULL).returncode != 0:
-            print("正在后台静默拉取官方 GPG 密钥并安装 WARP...")
+            print("检测到 WARP 未安装，正在执行全自动部署...")
             install_cmd = """
             apt-get update && apt-get install -y curl gnupg lsb-release
             curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
             echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
             apt-get update && apt-get install -y cloudflare-warp
             """
-            # 执行底层系统命令，并留出足够的时间
             subprocess.run(install_cmd, shell=True, executable='/bin/bash')
             time.sleep(3)
 
-        # 二次确认是否安装成功
+        # 检查是否成功装上
         if subprocess.run("command -v warp-cli", shell=True, stderr=subprocess.DEVNULL).returncode != 0:
-            print("WARP 核心组件安装失败。")
+            print("WARP 自动安装失败，退出解锁配置。")
             return False
 
-        # 2. 检查 WARP 连接状态
+        # 2. 检测运行状态，如果卡死或未连接，就执行我们手动跑通的抢救指令
         status = subprocess.check_output("warp-cli --accept-tos status", shell=True).decode()
         if "Connected" not in status:
-            print("WARP 未连接，正在执行强力重置与初始化...")
-            # 暴力清理之前的死连接或无响应状态
+            print("尝试初始化/重连 WARP SOCKS5...")
             subprocess.run("warp-cli --accept-tos disconnect", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             subprocess.run("warp-cli --accept-tos registration delete", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             
-            # 重新走完我们测试成功的抢救流程
             subprocess.run("warp-cli --accept-tos registration new", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             subprocess.run("warp-cli --accept-tos mode proxy", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             subprocess.run("warp-cli --accept-tos proxy port 40000", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-            # 加上 timeout 防止卡死
             subprocess.run("timeout 10 warp-cli --accept-tos connect", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+            time.sleep(5) # 给一点时间分配 IP
             
-            # 给 5 秒钟让网卡获取 IP 并握手
-            time.sleep(5)
-            
-            # 3. 最终验证
             new_status = subprocess.check_output("warp-cli --accept-tos status", shell=True).decode()
             if "Connected" not in new_status:
-                print("WARP 握手失败，VPS 网络环境可能存在阻断，将回退为直连模式。")
+                print("WARP 依然无法连接，放弃本次解锁配置注入。")
                 return False
                 
         return True
     except Exception as e:
-        print(f"WARP 自动部署引擎发生异常: {e}")
+        print(f"WARP 自动部署异常: {e}")
         return False
 # =====================================================================
 
@@ -169,7 +162,7 @@ def build_singbox_config(nodes, unlock_proxy):
     proxy_ip = ""
     proxy_port = 0
     
-    # 这里的逻辑不变：如果云端下发了 auto_warp，就触发自动部署引擎
+    # 触发自动部署 WARP 或者自定义解锁端口
     if unlock_proxy == "auto_warp":
         if check_and_deploy_warp():
             proxy_ip = "127.0.0.1"
@@ -182,6 +175,7 @@ def build_singbox_config(nodes, unlock_proxy):
         except:
             pass
 
+    # 【防崩溃关键逻辑】：只有当 proxy_ip 和 proxy_port 成功拿到时，才生成解锁路由
     if proxy_ip and proxy_port:
         try:
             singbox_config["outbounds"].append({
