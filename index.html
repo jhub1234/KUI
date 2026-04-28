@@ -172,7 +172,7 @@
 
                     <div class="grid grid-cols-2 gap-2 mt-auto p-4 bg-gray-50 border-t">
                         <div class="bg-black p-3 rounded cursor-pointer group col-span-2 md:col-span-1" @click="copyCommand(generateCmd(vps.ip))">
-                            <div class="text-[10px] text-gray-400 mb-1 uppercase tracking-wider">终端部署指令</div>
+                            <div class="text-[10px] text-gray-400 mb-1 uppercase tracking-wider">终端部署指令 (加固版)</div>
                             <div class="text-green-400 font-mono text-xs truncate">bash <(curl -sL ...</div>
                         </div>
                         <div class="bg-blue-600 p-3 rounded cursor-pointer hover:bg-blue-700 transition flex items-center justify-center text-white font-bold shadow-sm col-span-2 md:col-span-1" @click="copyCommand(generateSubLink(vps.ip), '订阅链接已复制！')">
@@ -191,7 +191,7 @@
     <script>
         const { createApp, ref, reactive, onMounted, onUnmounted, nextTick } = Vue;
         
-        // --- 本地加密工具包 (Web Crypto API) ---
+        // --- 密码学工具函数 (Web Crypto API) ---
         const toBase64Url = (uint8Array) => {
             let str = ''; for (let i = 0; i < uint8Array.length; i++) str += String.fromCharCode(uint8Array[i]);
             return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -201,13 +201,11 @@
             return { privateKey: toBase64Url(keypair.secretKey), publicKey: toBase64Url(keypair.publicKey), shortId: crypto.randomUUID().replace(/-/g, '').substring(0, 16) };
         };
         
-        // 计算 SHA256 哈希
         const sha256 = async (text) => {
             const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
             return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
         };
         
-        // 生成 HMAC 动态签名
         const generateHMAC = async (keyHex, message) => {
             const keyBytes = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
             const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -219,7 +217,7 @@
             setup() {
                 const isLoggedIn = ref(false);
                 const password = ref('');
-                // 保存的不再是明文密码，而是密码的 SHA256 Hash
+                // 保存的不再是明文密码，而是密码的 Hash 值
                 const authKey = ref(localStorage.getItem('kui_auth_key') || '');
                 const servers = ref([]);
                 const nodes = ref([]);
@@ -227,6 +225,7 @@
                 const newNodeParams = reactive({}); 
                 const currentDomain = window.location.origin;
 
+                // --- 页面可见性与轮询控制 ---
                 let pollTimer = null;
 
                 const startPolling = () => {
@@ -240,8 +239,10 @@
                     else if (isLoggedIn.value) { refreshData(); startPolling(); }
                 };
 
+                // 在线状态判断 (10分钟超时)
                 const isOnline = (lastReport) => lastReport && (Date.now() - lastReport) < 10 * 60 * 1000;
                 
+                // 格式化工具
                 const formatBytes = (bytes) => {
                     if (bytes === 0) return '0 B';
                     const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'], i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -257,11 +258,11 @@
                     return Math.min((used / limit) * 100, 100);
                 };
 
-                // 每次请求前动态计算带时间戳的 HMAC 签名
+                // 核心：每次请求附带 HMAC 动态签名
                 const fetchApi = async (url, options = {}) => {
                     const timestamp = Date.now().toString();
                     const signature = await generateHMAC(authKey.value, timestamp);
-                    const dynamicToken = `${timestamp}.${signature}`; // 防抓包、防重放
+                    const dynamicToken = `${timestamp}.${signature}`; 
                     
                     options.headers = { ...options.headers, 'Authorization': dynamicToken };
                     const res = await fetch(url, options);
@@ -269,7 +270,7 @@
                     return res;
                 };
 
-                // 登录时计算 Hash 并发送动态 Token
+                // 登录流程
                 const login = async () => {
                     try {
                         const hashedPass = await sha256(password.value);
@@ -285,7 +286,7 @@
                             authKey.value = hashedPass; 
                             localStorage.setItem('kui_auth_key', authKey.value); 
                             isLoggedIn.value = true; 
-                            password.value = ''; // 立刻清空内存中的明文密码
+                            password.value = ''; // 内存清理
                             refreshData(); 
                             startPolling(); 
                         } else {
@@ -303,6 +304,7 @@
                     stopPolling(); 
                 };
 
+                // 渲染图表核心函数 (静默更新防闪烁)
                 const renderCharts = async () => {
                     await nextTick();
                     for (let vps of servers.value) {
@@ -348,6 +350,7 @@
                     } catch(e) {}
                 };
 
+                // VPS 与 Node 操作方法
                 const addVps = async () => { if(!newVps.value.ip || !newVps.value.name) return; await fetchApi('/api/vps', { method: 'POST', body: JSON.stringify(newVps.value) }); newVps.value = { name: '', ip: '' }; refreshData(); };
                 const deleteVps = async (ip) => { if(confirm('删除机器将清理其下所有节点配置！')) { await fetchApi('/api/vps?ip=' + ip, { method: 'DELETE' }); refreshData(); } };
                 const getNodesByIp = (ip) => nodes.value.filter(n => n.vps_ip === ip);
@@ -360,9 +363,11 @@
                     let limitBytes = params.traffic_limit_gb ? Math.floor(parseFloat(params.traffic_limit_gb) * 1024 * 1024 * 1024) : 0;
                     let expireTs = params.expire_date ? new Date(params.expire_date).getTime() : 0;
                     let payload = { id: Date.now().toString(), uuid: crypto.randomUUID(), vps_ip: ip, protocol: params.protocol, port: params.port, traffic_limit: limitBytes, expire_time: expireTs };
+                    
                     if (params.protocol === 'Reality') { const keys = generateRealityKeys(); payload.sni = params.sni; payload.private_key = keys.privateKey; payload.public_key = keys.publicKey; payload.short_id = keys.shortId; } 
                     else if (params.protocol === 'Hysteria2') { const nicheDomains = ["www.chiba-u.ac.jp", "www.tsukuba.ac.jp", "www.jma.go.jp", "www.epfl.ch", "www.su.se", "www.tu-berlin.de"]; payload.sni = nicheDomains[Math.floor(Math.random() * nicheDomains.length)]; } 
                     else if (params.protocol === 'dokodemo-door') { payload.relay_type = params.relay_type; if (params.relay_type === 'external') { payload.target_ip = params.target_ip; payload.target_port = params.target_port; } else { payload.target_id = params.target_id; } }
+                    
                     await fetchApi('/api/nodes', { method: 'POST', body: JSON.stringify(payload) }); refreshData();
                 };
 
@@ -370,17 +375,21 @@
                 const toggleNode = async (id, status) => { await fetchApi('/api/nodes', { method: 'PUT', body: JSON.stringify({ id: id, enable: status }) }); refreshData(); };
                 const resetTraffic = async (id) => { if(confirm('确定清空该节点的已用流量？')) { await fetchApi('/api/nodes', { method: 'PUT', body: JSON.stringify({ id: id, reset_traffic: true }) }); refreshData(); } };
 
-                // 🌟 使用 authKey (Hash) 替代原有的明文 token 下发
+                // 使用 Hash 值作为安装 Token，防止明文泄露
                 const generateCmd = (ip) => `apt-get update -y && apt-get install -y curl && bash <(curl -sL https://raw.githubusercontent.com/a62169722/KUI/main/vps/kui.sh) --api "${currentDomain}" --ip "${ip}" --token "${authKey.value}"`;
                 const generateSubLink = (ip) => `${currentDomain}/api/sub?ip=${ip}&token=${authKey.value}`;
                 const copyCommand = (text, msg = '部署指令已复制！') => navigator.clipboard.writeText(text).then(() => alert(msg));
 
+                // 声明周期挂载
                 onMounted(() => { 
                     if (authKey.value) { isLoggedIn.value = true; refreshData(); startPolling(); } 
                     document.addEventListener('visibilitychange', handleVisibilityChange);
                 });
 
-                onUnmounted(() => { stopPolling(); document.removeEventListener('visibilitychange', handleVisibilityChange); });
+                onUnmounted(() => { 
+                    stopPolling(); 
+                    document.removeEventListener('visibilitychange', handleVisibilityChange); 
+                });
 
                 return { isLoggedIn, password, login, logout, servers, nodes, newVps, newNodeParams, isOnline, formatBytes, formatDate, getTrafficPercent, refreshData, addVps, deleteVps, getNodesByIp, getAllOtherNodes, getVpsName, addNode, deleteNode, toggleNode, resetTraffic, generateCmd, generateSubLink, copyCommand };
             }
