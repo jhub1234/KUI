@@ -7,20 +7,35 @@ export async function onRequest(context) {
     const ADMIN_PASS = env.ADMIN_PASSWORD || "admin"; 
     const db = env.DB; 
 
+    // 1. Agent 上报接口 (实时状态更新 + 流量历史记录)
     if (action === "report" && method === "POST") {
         const data = await request.json(); 
-        await db.prepare("UPDATE servers SET cpu = ?, mem = ?, last_report = ? WHERE ip = ?")
-                .bind(data.cpu, data.mem, Date.now(), data.ip).run();
+        const nowMs = Date.now();
+
+        // 更新状态，并重置 alert_sent (表示机器存活，清除失联状态)
+        await db.prepare("UPDATE servers SET cpu = ?, mem = ?, last_report = ?, alert_sent = 0 WHERE ip = ?")
+                .bind(data.cpu, data.mem, nowMs, data.ip).run();
                 
+        const stmts = [];
+        let totalDelta = 0;
+
         if (data.node_traffic && data.node_traffic.length > 0) {
-            const stmts = data.node_traffic.map(nt => 
-                db.prepare("UPDATE nodes SET traffic_used = traffic_used + ? WHERE id = ?").bind(nt.delta_bytes, nt.id)
-            );
-            await db.batch(stmts);
+            for (let nt of data.node_traffic) {
+                stmts.push(db.prepare("UPDATE nodes SET traffic_used = traffic_used + ? WHERE id = ?").bind(nt.delta_bytes, nt.id));
+                totalDelta += nt.delta_bytes;
+            }
         }
+        
+        // 如果有流量产生，记录到历史流量表 (用于 ECharts 画图)
+        if (totalDelta > 0) {
+            stmts.push(db.prepare("INSERT INTO traffic_stats (ip, delta_bytes, timestamp) VALUES (?, ?, ?)").bind(data.ip, totalDelta, nowMs));
+        }
+
+        if (stmts.length > 0) await db.batch(stmts);
         return Response.json({ success: true });
     }
 
+    // 2. Agent 拉取配置接口
     if (action === "config" && method === "GET") {
         if (request.headers.get("Authorization") !== ADMIN_PASS) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const ip = url.searchParams.get("ip");
@@ -50,6 +65,7 @@ export async function onRequest(context) {
         return Response.json({ success: true, server: serverInfo, configs: machineNodes });
     }
 
+    // 3. 订阅链接下发接口
     if (action === "sub" && method === "GET") {
         const ip = url.searchParams.get("ip");
         const token = url.searchParams.get("token");
@@ -83,25 +99,81 @@ export async function onRequest(context) {
         return new Response(base64Sub, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }});
     }
 
+    // 面板登录接口
     if (action === "login" && method === "POST") {
         const data = await request.json();
         if (data.password === ADMIN_PASS) return Response.json({ success: true });
         return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // ==============================================
+    // 以下接口需要 ADMIN_PASS 鉴权
+    // ==============================================
     if (request.headers.get("Authorization") !== ADMIN_PASS) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     try {
+        // 获取首页全量数据
         if (action === "data" && method === "GET") {
             const servers = (await db.prepare("SELECT * FROM servers ORDER BY last_report DESC").all()).results;
             const nodes = (await db.prepare("SELECT * FROM nodes").all()).results;
             return Response.json({ servers, nodes });
         }
 
+        // 🌟 新增：获取 7 天历史流量数据用于前端画图
+        if (action === "stats" && method === "GET") {
+            const ip = url.searchParams.get("ip");
+            const sevenDaysAgoMs = Date.now() - (7 * 24 * 60 * 60 * 1000);
+            
+            // SQLite datetime 需要秒级时间戳，所以 timestamp / 1000
+            const query = `
+                SELECT 
+                    strftime('%m-%d', datetime(timestamp / 1000, 'unixepoch', 'localtime')) as day,
+                    SUM(delta_bytes) as total_bytes
+                FROM traffic_stats
+                WHERE ip = ? AND timestamp > ?
+                GROUP BY day
+                ORDER BY day ASC
+            `;
+            const { results } = await db.prepare(query).bind(ip, sevenDaysAgoMs).all();
+            return Response.json(results || []);
+        }
+
+        // 🌟 新增：Telegram 失联巡检触发器 (可通过第三方定时任务调用)
+        if (action === "cron" && method === "GET") {
+            const nowMs = Date.now();
+            const TIMEOUT_MS = 3 * 60 * 1000; // 3 分钟没心跳视为失联
+
+            const { results } = await db.prepare(`SELECT ip, name, last_report FROM servers WHERE last_report < ? AND alert_sent = 0`).bind(nowMs - TIMEOUT_MS).all();
+
+            if (results && results.length > 0) {
+                const tgBotToken = env.TG_BOT_TOKEN; // 请在 Pages 后台设置环境变量
+                const tgChatId = env.TG_CHAT_ID;
+                const updateStmts = [];
+
+                for (let vps of results) {
+                    if (tgBotToken && tgChatId) {
+                        const dateStr = new Date(vps.last_report).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+                        const text = `⚠️ [KUI 节点失联告警]\n\n节点别名: ${vps.name}\n公网IP: ${vps.ip}\n最后在线: ${dateStr}\n请检查节点运行状态！`;
+                        
+                        await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ chat_id: tgChatId, text })
+                        });
+                    }
+                    // 标记为已告警，防止重复发送
+                    updateStmts.push(db.prepare("UPDATE servers SET alert_sent = 1 WHERE ip = ?").bind(vps.ip));
+                }
+                if (updateStmts.length > 0) await db.batch(updateStmts);
+            }
+            return Response.json({ success: true, alerted: results ? results.length : 0 });
+        }
+
+        // VPS CRUD 操作
         if (action === "vps") {
             if (method === "POST") {
                 const { ip, name } = await request.json();
-                await db.prepare("INSERT OR IGNORE INTO servers (ip, name) VALUES (?, ?)").bind(ip, name).run();
+                await db.prepare("INSERT OR IGNORE INTO servers (ip, name, alert_sent) VALUES (?, ?, 0)").bind(ip, name).run();
                 return Response.json({ success: true });
             }
             if (method === "PUT") {
@@ -115,6 +187,7 @@ export async function onRequest(context) {
             }
         }
 
+        // Nodes CRUD 操作
         if (action === "nodes") {
             if (method === "POST") {
                 const n = await request.json();
