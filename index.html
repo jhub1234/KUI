@@ -190,6 +190,8 @@
 
     <script>
         const { createApp, ref, reactive, onMounted, onUnmounted, nextTick } = Vue;
+        
+        // --- 本地加密工具包 (Web Crypto API) ---
         const toBase64Url = (uint8Array) => {
             let str = ''; for (let i = 0; i < uint8Array.length; i++) str += String.fromCharCode(uint8Array[i]);
             return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -198,51 +200,46 @@
             const keypair = nacl.box.keyPair();
             return { privateKey: toBase64Url(keypair.secretKey), publicKey: toBase64Url(keypair.publicKey), shortId: crypto.randomUUID().replace(/-/g, '').substring(0, 16) };
         };
+        
+        // 计算 SHA256 哈希
+        const sha256 = async (text) => {
+            const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+            return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        };
+        
+        // 生成 HMAC 动态签名
+        const generateHMAC = async (keyHex, message) => {
+            const keyBytes = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+            const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+            return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+        };
 
         createApp({
             setup() {
                 const isLoggedIn = ref(false);
                 const password = ref('');
-                const token = ref(localStorage.getItem('kui_token') || '');
+                // 保存的不再是明文密码，而是密码的 SHA256 Hash
+                const authKey = ref(localStorage.getItem('kui_auth_key') || '');
                 const servers = ref([]);
                 const nodes = ref([]);
                 const newVps = ref({ name: '', ip: '' });
                 const newNodeParams = reactive({}); 
                 const currentDomain = window.location.origin;
 
-                // 🌟 新增：页面可见性控制定时器
                 let pollTimer = null;
 
                 const startPolling = () => {
-                    if (!pollTimer) {
-                        pollTimer = setInterval(() => {
-                            if (isLoggedIn.value) refreshData();
-                        }, 30000); // 30秒刷新一次
-                    }
+                    if (!pollTimer) pollTimer = setInterval(() => { if (isLoggedIn.value) refreshData(); }, 30000);
                 };
-
                 const stopPolling = () => {
-                    if (pollTimer) {
-                        clearInterval(pollTimer);
-                        pollTimer = null;
-                    }
+                    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
                 };
-
-                // 监听页面切换事件 (休眠核心逻辑)
                 const handleVisibilityChange = () => {
-                    if (document.hidden) {
-                        // 页面被隐藏、最小化或切到别的标签，立刻停止拉取
-                        stopPolling();
-                    } else {
-                        // 切回页面，立即拉取一次最新数据，并重新启动定时器
-                        if (isLoggedIn.value) {
-                            refreshData();
-                            startPolling();
-                        }
-                    }
+                    if (document.hidden) stopPolling();
+                    else if (isLoggedIn.value) { refreshData(); startPolling(); }
                 };
 
-                // 判断是否在线 (超过 10 分钟没上报变红)
                 const isOnline = (lastReport) => lastReport && (Date.now() - lastReport) < 10 * 60 * 1000;
                 
                 const formatBytes = (bytes) => {
@@ -260,34 +257,52 @@
                     return Math.min((used / limit) * 100, 100);
                 };
 
+                // 每次请求前动态计算带时间戳的 HMAC 签名
                 const fetchApi = async (url, options = {}) => {
-                    options.headers = { ...options.headers, 'Authorization': token.value };
+                    const timestamp = Date.now().toString();
+                    const signature = await generateHMAC(authKey.value, timestamp);
+                    const dynamicToken = `${timestamp}.${signature}`; // 防抓包、防重放
+                    
+                    options.headers = { ...options.headers, 'Authorization': dynamicToken };
                     const res = await fetch(url, options);
                     if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
                     return res;
                 };
 
+                // 登录时计算 Hash 并发送动态 Token
                 const login = async () => {
-                    const res = await fetch('/api/login', { method: 'POST', body: JSON.stringify({ password: password.value }) });
-                    if (res.ok) { 
-                        token.value = password.value; 
-                        localStorage.setItem('kui_token', token.value); 
-                        isLoggedIn.value = true; 
-                        refreshData(); 
-                        startPolling(); // 登录成功开始轮询
-                    } else {
-                        alert('密码错误');
+                    try {
+                        const hashedPass = await sha256(password.value);
+                        const timestamp = Date.now().toString();
+                        const signature = await generateHMAC(hashedPass, timestamp);
+                        
+                        const res = await fetch('/api/login', {
+                            method: 'POST',
+                            headers: { 'Authorization': `${timestamp}.${signature}` }
+                        });
+
+                        if (res.ok) { 
+                            authKey.value = hashedPass; 
+                            localStorage.setItem('kui_auth_key', authKey.value); 
+                            isLoggedIn.value = true; 
+                            password.value = ''; // 立刻清空内存中的明文密码
+                            refreshData(); 
+                            startPolling(); 
+                        } else {
+                            alert('密码错误或请求已过期');
+                        }
+                    } catch (e) {
+                        alert('登录验证异常');
                     }
                 };
 
                 const logout = () => { 
-                    localStorage.removeItem('kui_token'); 
+                    localStorage.removeItem('kui_auth_key'); 
                     isLoggedIn.value = false; 
-                    token.value = password.value = ''; 
-                    stopPolling(); // 退出登录停止轮询
+                    authKey.value = password.value = ''; 
+                    stopPolling(); 
                 };
 
-                // 渲染 ECharts 流量趋势图
                 const renderCharts = async () => {
                     await nextTick();
                     for (let vps of servers.value) {
@@ -302,39 +317,21 @@
                                     myChart = echarts.init(chartDom);
                                     window.addEventListener('resize', () => myChart.resize());
                                 }
-                                
                                 const days = stats.map(s => s.day);
                                 const bytes = stats.map(s => (s.total_bytes / 1024 / 1024).toFixed(2));
                                 
                                 myChart.setOption({
                                     tooltip: { trigger: 'axis', formatter: '{b}<br/>{c} MB' },
                                     grid: { left: '12%', right: '5%', top: '5%', bottom: '15%' },
-                                    xAxis: { 
-                                        type: 'category', boundaryGap: false, data: days, 
-                                        axisLabel: { fontSize: 9, color: '#9ca3af' },
-                                        axisLine: { lineStyle: { color: '#e5e7eb' } }
-                                    },
-                                    yAxis: { 
-                                        type: 'value', 
-                                        splitLine: { lineStyle: { type: 'dashed', color: '#f3f4f6' } }, 
-                                        axisLabel: { show: false } 
-                                    },
+                                    xAxis: { type: 'category', boundaryGap: false, data: days, axisLabel: { fontSize: 9, color: '#9ca3af' }, axisLine: { lineStyle: { color: '#e5e7eb' } }},
+                                    yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed', color: '#f3f4f6' } }, axisLabel: { show: false } },
                                     series: [{
-                                        data: bytes, type: 'line', smooth: true, symbol: 'none',
-                                        itemStyle: { color: '#000000' },
-                                        lineStyle: { width: 2 },
-                                        areaStyle: { 
-                                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                                { offset: 0, color: 'rgba(0,0,0,0.15)' }, 
-                                                { offset: 1, color: 'rgba(0,0,0,0)' }
-                                            ]) 
-                                        }
+                                        data: bytes, type: 'line', smooth: true, symbol: 'none', itemStyle: { color: '#000000' }, lineStyle: { width: 2 },
+                                        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(0,0,0,0.15)' }, { offset: 1, color: 'rgba(0,0,0,0)' }]) }
                                     }]
                                 });
                             }
-                        } catch (e) {
-                            console.error("加载图表失败:", e);
-                        }
+                        } catch (e) { console.error("加载图表失败:", e); }
                     }
                 };
 
@@ -345,24 +342,14 @@
                         servers.value = data.servers || [];
                         nodes.value = data.nodes || [];
                         servers.value.forEach(s => {
-                            if(!newNodeParams[s.ip]) {
-                                newNodeParams[s.ip] = { protocol: 'VLESS', port: 443, sni: '', relay_type: 'external', traffic_limit_gb: '', expire_date: '' };
-                            }
+                            if(!newNodeParams[s.ip]) newNodeParams[s.ip] = { protocol: 'VLESS', port: 443, sni: '', relay_type: 'external', traffic_limit_gb: '', expire_date: '' };
                         });
-                        
                         renderCharts();
                     } catch(e) {}
                 };
 
-                const addVps = async () => {
-                    if(!newVps.value.ip || !newVps.value.name) return;
-                    await fetchApi('/api/vps', { method: 'POST', body: JSON.stringify(newVps.value) });
-                    newVps.value = { name: '', ip: '' }; refreshData();
-                };
-                const deleteVps = async (ip) => {
-                    if(confirm('删除机器将清理其下所有节点配置！')) { await fetchApi('/api/vps?ip=' + ip, { method: 'DELETE' }); refreshData(); }
-                };
-
+                const addVps = async () => { if(!newVps.value.ip || !newVps.value.name) return; await fetchApi('/api/vps', { method: 'POST', body: JSON.stringify(newVps.value) }); newVps.value = { name: '', ip: '' }; refreshData(); };
+                const deleteVps = async (ip) => { if(confirm('删除机器将清理其下所有节点配置！')) { await fetchApi('/api/vps?ip=' + ip, { method: 'DELETE' }); refreshData(); } };
                 const getNodesByIp = (ip) => nodes.value.filter(n => n.vps_ip === ip);
                 const getVpsName = (ip) => servers.value.find(s => s.ip === ip)?.name || ip;
                 const getAllOtherNodes = (currentIp) => nodes.value.filter(n => n.vps_ip !== currentIp && n.protocol !== 'dokodemo-door');
@@ -370,55 +357,30 @@
                 const addNode = async (ip) => {
                     const params = newNodeParams[ip];
                     if(!params.port) return alert('端口不能为空');
-                    
                     let limitBytes = params.traffic_limit_gb ? Math.floor(parseFloat(params.traffic_limit_gb) * 1024 * 1024 * 1024) : 0;
                     let expireTs = params.expire_date ? new Date(params.expire_date).getTime() : 0;
-
-                    let payload = { 
-                        id: Date.now().toString(), uuid: crypto.randomUUID(), vps_ip: ip, protocol: params.protocol, port: params.port,
-                        traffic_limit: limitBytes, expire_time: expireTs
-                    };
-
-                    if (params.protocol === 'Reality') {
-                        const keys = generateRealityKeys();
-                        payload.sni = params.sni; payload.private_key = keys.privateKey; payload.public_key = keys.publicKey; payload.short_id = keys.shortId;
-                    } else if (params.protocol === 'Hysteria2') {
-                        const nicheDomains = ["www.chiba-u.ac.jp", "www.tsukuba.ac.jp", "www.jma.go.jp", "www.epfl.ch", "www.su.se", "www.tu-berlin.de"];
-                        payload.sni = nicheDomains[Math.floor(Math.random() * nicheDomains.length)];
-                    } else if (params.protocol === 'dokodemo-door') {
-                        payload.relay_type = params.relay_type;
-                        if (params.relay_type === 'external') { payload.target_ip = params.target_ip; payload.target_port = params.target_port; } 
-                        else { payload.target_id = params.target_id; }
-                    }
-
-                    await fetchApi('/api/nodes', { method: 'POST', body: JSON.stringify(payload) });
-                    refreshData();
+                    let payload = { id: Date.now().toString(), uuid: crypto.randomUUID(), vps_ip: ip, protocol: params.protocol, port: params.port, traffic_limit: limitBytes, expire_time: expireTs };
+                    if (params.protocol === 'Reality') { const keys = generateRealityKeys(); payload.sni = params.sni; payload.private_key = keys.privateKey; payload.public_key = keys.publicKey; payload.short_id = keys.shortId; } 
+                    else if (params.protocol === 'Hysteria2') { const nicheDomains = ["www.chiba-u.ac.jp", "www.tsukuba.ac.jp", "www.jma.go.jp", "www.epfl.ch", "www.su.se", "www.tu-berlin.de"]; payload.sni = nicheDomains[Math.floor(Math.random() * nicheDomains.length)]; } 
+                    else if (params.protocol === 'dokodemo-door') { payload.relay_type = params.relay_type; if (params.relay_type === 'external') { payload.target_ip = params.target_ip; payload.target_port = params.target_port; } else { payload.target_id = params.target_id; } }
+                    await fetchApi('/api/nodes', { method: 'POST', body: JSON.stringify(payload) }); refreshData();
                 };
 
                 const deleteNode = async (id) => { await fetchApi('/api/nodes?id=' + id, { method: 'DELETE' }); refreshData(); };
                 const toggleNode = async (id, status) => { await fetchApi('/api/nodes', { method: 'PUT', body: JSON.stringify({ id: id, enable: status }) }); refreshData(); };
                 const resetTraffic = async (id) => { if(confirm('确定清空该节点的已用流量？')) { await fetchApi('/api/nodes', { method: 'PUT', body: JSON.stringify({ id: id, reset_traffic: true }) }); refreshData(); } };
 
-                const generateCmd = (ip) => `apt-get update -y && apt-get install -y curl && bash <(curl -sL https://raw.githubusercontent.com/a62169722/KUI/main/vps/kui.sh) --api "${currentDomain}" --ip "${ip}" --token "${token.value}"`;
-                const generateSubLink = (ip) => `${currentDomain}/api/sub?ip=${ip}&token=${token.value}`;
+                // 🌟 使用 authKey (Hash) 替代原有的明文 token 下发
+                const generateCmd = (ip) => `apt-get update -y && apt-get install -y curl && bash <(curl -sL https://raw.githubusercontent.com/a62169722/KUI/main/vps/kui.sh) --api "${currentDomain}" --ip "${ip}" --token "${authKey.value}"`;
+                const generateSubLink = (ip) => `${currentDomain}/api/sub?ip=${ip}&token=${authKey.value}`;
                 const copyCommand = (text, msg = '部署指令已复制！') => navigator.clipboard.writeText(text).then(() => alert(msg));
 
-                // 组件挂载时执行
                 onMounted(() => { 
-                    if (token.value) { 
-                        isLoggedIn.value = true; 
-                        refreshData(); 
-                        startPolling(); 
-                    } 
-                    // 绑定页面可见性事件
+                    if (authKey.value) { isLoggedIn.value = true; refreshData(); startPolling(); } 
                     document.addEventListener('visibilitychange', handleVisibilityChange);
                 });
 
-                // 组件卸载时清理（虽然在单页应用里不一定会触发，但是好习惯）
-                onUnmounted(() => {
-                    stopPolling();
-                    document.removeEventListener('visibilitychange', handleVisibilityChange);
-                });
+                onUnmounted(() => { stopPolling(); document.removeEventListener('visibilitychange', handleVisibilityChange); });
 
                 return { isLoggedIn, password, login, logout, servers, nodes, newVps, newNodeParams, isOnline, formatBytes, formatDate, getTrafficPercent, refreshData, addVps, deleteVps, getNodesByIp, getAllOtherNodes, getVpsName, addNode, deleteNode, toggleNode, resetTraffic, generateCmd, generateSubLink, copyCommand };
             }
