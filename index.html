@@ -7,6 +7,7 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/tweetnacl@1.0.3/nacl-fast.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>[v-cloak] { display: none !important; }</style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans p-4 md:p-8">
@@ -69,6 +70,11 @@
                                     <div class="w-full bg-gray-200 rounded-full h-1 mt-1"><div class="bg-black h-1 rounded-full" :style="{ width: (vps.mem || 0) + '%' }"></div></div>
                                 </div>
                             </div>
+                        </div>
+
+                        <div class="mt-4 pt-4 border-t border-dashed">
+                            <div class="text-[10px] text-gray-400 mb-2 font-bold tracking-wider">7 DAY TRAFFIC TREND</div>
+                            <div :id="'chart-' + vps.ip" class="w-full h-32"></div>
                         </div>
                     </div>
 
@@ -182,7 +188,7 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, onMounted } = Vue;
+        const { createApp, ref, reactive, onMounted, nextTick } = Vue;
         const toBase64Url = (uint8Array) => {
             let str = ''; for (let i = 0; i < uint8Array.length; i++) str += String.fromCharCode(uint8Array[i]);
             return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -203,6 +209,7 @@
                 const newNodeParams = reactive({}); 
                 const currentDomain = window.location.origin;
 
+                // 判断是否在线 (超过 10 分钟没上报变红)
                 const isOnline = (lastReport) => lastReport && (Date.now() - lastReport) < 10 * 60 * 1000;
                 
                 const formatBytes = (bytes) => {
@@ -234,6 +241,60 @@
                 };
                 const logout = () => { localStorage.removeItem('kui_token'); isLoggedIn.value = false; token.value = password.value = ''; };
 
+                // 🌟 新增：渲染 ECharts 流量趋势图
+                const renderCharts = async () => {
+                    await nextTick(); // 等待 Vue 渲染 DOM 完毕
+                    for (let vps of servers.value) {
+                        try {
+                            const res = await fetchApi(`/api/stats?ip=${vps.ip}`);
+                            const stats = await res.json();
+                            
+                            const chartDom = document.getElementById('chart-' + vps.ip);
+                            if (chartDom) {
+                                // 销毁旧实例防止内存泄漏
+                                let myChart = echarts.getInstanceByDom(chartDom);
+                                if (myChart) myChart.dispose();
+                                
+                                myChart = echarts.init(chartDom);
+                                
+                                const days = stats.map(s => s.day);
+                                const bytes = stats.map(s => (s.total_bytes / 1024 / 1024).toFixed(2)); // 转成 MB
+                                
+                                myChart.setOption({
+                                    tooltip: { trigger: 'axis', formatter: '{b}<br/>{c} MB' },
+                                    grid: { left: '12%', right: '5%', top: '5%', bottom: '15%' },
+                                    xAxis: { 
+                                        type: 'category', boundaryGap: false, data: days, 
+                                        axisLabel: { fontSize: 9, color: '#9ca3af' },
+                                        axisLine: { lineStyle: { color: '#e5e7eb' } }
+                                    },
+                                    yAxis: { 
+                                        type: 'value', 
+                                        splitLine: { lineStyle: { type: 'dashed', color: '#f3f4f6' } }, 
+                                        axisLabel: { show: false } 
+                                    },
+                                    series: [{
+                                        data: bytes, type: 'line', smooth: true, symbol: 'none',
+                                        itemStyle: { color: '#000000' },
+                                        lineStyle: { width: 2 },
+                                        areaStyle: { 
+                                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                                { offset: 0, color: 'rgba(0,0,0,0.15)' }, 
+                                                { offset: 1, color: 'rgba(0,0,0,0)' }
+                                            ]) 
+                                        }
+                                    }]
+                                });
+                                
+                                // 让图表随浏览器窗口自适应
+                                window.addEventListener('resize', () => myChart.resize());
+                            }
+                        } catch (e) {
+                            console.error("加载图表失败:", e);
+                        }
+                    }
+                };
+
                 const refreshData = async () => {
                     try {
                         const res = await fetchApi('/api/data');
@@ -245,6 +306,9 @@
                                 newNodeParams[s.ip] = { protocol: 'VLESS', port: 443, sni: '', relay_type: 'external', traffic_limit_gb: '', expire_date: '' };
                             }
                         });
+                        
+                        // 数据加载完毕后渲染图表
+                        renderCharts();
                     } catch(e) {}
                 };
 
