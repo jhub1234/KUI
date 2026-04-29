@@ -1,6 +1,5 @@
 // ==========================================
-// KUI Serverless 聚合网关后端 - 终极多用户全协议完整版
-// 保证 100% 无删减，开箱即用
+// KUI Serverless 聚合网关后端 - 终极黄金完全体 (支持 7 大协议 + Argo全自动)
 // ==========================================
 
 async function sha256(text) {
@@ -8,7 +7,6 @@ async function sha256(text) {
     return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// 自动检测并热更新数据库结构 (支持旧版本无缝升级)
 async function ensureDbSchema(db) {
     try { await db.prepare("SELECT username FROM nodes LIMIT 1").first(); } 
     catch (e) { try { await db.prepare("ALTER TABLE nodes ADD COLUMN username TEXT DEFAULT 'admin'").run(); } catch(e){} }
@@ -25,20 +23,17 @@ async function ensureDbSchema(db) {
     }
 }
 
-// 多角色动态 HMAC 签名验证 (军工级防重放)
 async function verifyAuth(authHeader, db, env) {
     if (!authHeader) return null;
     const adminUser = env.ADMIN_USERNAME || "admin";
     const adminPass = env.ADMIN_PASSWORD || "admin";
 
-    // 静态 Token 兼容 (仅供 Agent 探针拉取配置时使用)
     if (authHeader === adminPass || authHeader === await sha256(adminPass)) return adminUser;
 
     const parts = authHeader.split('.');
     if (parts.length !== 3) return null;
     const [b64User, timestamp, clientSig] = parts;
 
-    // 5分钟防重放时间窗口
     if (Math.abs(Date.now() - parseInt(timestamp)) > 300000) return null;
 
     const username = atob(b64User);
@@ -59,9 +54,6 @@ async function verifyAuth(authHeader, db, env) {
     return clientSig === expectedSig ? username : null;
 }
 
-// ==========================================
-// 核心路由处理逻辑
-// ==========================================
 export async function onRequest(context) {
     const { request, env, params } = context;
     const url = new URL(request.url);
@@ -69,7 +61,7 @@ export async function onRequest(context) {
     const action = params.path ? params.path[0] : ''; 
     const db = env.DB; 
 
-    // [接口 1] Agent 探针心跳上报接口 (处理负载、流量双重累加)
+    // [1] Agent 探针上报接口 (支持流量级联累加 + Argo 域名自动回传)
     if (action === "report" && method === "POST") {
         if (!(await verifyAuth(request.headers.get("Authorization"), db, env))) return new Response("Unauthorized", { status: 401 });
         const data = await request.json(); 
@@ -80,27 +72,31 @@ export async function onRequest(context) {
         let totalDelta = 0;
         if (data.node_traffic && data.node_traffic.length > 0) {
             for (let nt of data.node_traffic) {
-                // 累加单节点流量
                 stmts.push(db.prepare("UPDATE nodes SET traffic_used = traffic_used + ? WHERE id = ?").bind(nt.delta_bytes, nt.id));
-                // 级联累加该节点所属用户的总流量
                 stmts.push(db.prepare(`UPDATE users SET traffic_used = traffic_used + ? WHERE username = (SELECT username FROM nodes WHERE id = ?)`).bind(nt.delta_bytes, nt.id));
                 totalDelta += nt.delta_bytes;
             }
         }
-        // 记录每日历史流量用于画图
+        
+        // 处理 Argo 域名静默回传更新
+        if (data.argo_urls && data.argo_urls.length > 0) {
+            for (let argo of data.argo_urls) {
+                stmts.push(db.prepare("UPDATE nodes SET sni = ? WHERE id = ? AND protocol = 'VLESS-Argo' AND sni != ?").bind(argo.url, argo.id, argo.url));
+            }
+        }
+
         if (totalDelta > 0) stmts.push(db.prepare("INSERT INTO traffic_stats (ip, delta_bytes, timestamp) VALUES (?, ?, ?)").bind(data.ip, totalDelta, nowMs));
         if (stmts.length > 0) await db.batch(stmts);
         return Response.json({ success: true });
     }
 
-    // [接口 2] Agent 探针拉取配置接口 (VPS端赖以生存的灵魂接口)
+    // [2] Agent 探针拉取配置接口 (VPS端依赖此接口拉取配置)
     if (action === "config" && method === "GET") {
         if (!(await verifyAuth(request.headers.get("Authorization"), db, env))) return new Response("Unauthorized", { status: 401 });
         const ip = url.searchParams.get("ip");
         const now = Date.now();
         const adminUser = env.ADMIN_USERNAME || "admin";
 
-        // 精准拦截：节点被停用、节点超量、节点过期、用户被封禁、用户超量、用户过期
         const query = `
             SELECT n.* FROM nodes n
             LEFT JOIN users u ON n.username = u.username
@@ -117,7 +113,6 @@ export async function onRequest(context) {
         `;
         const { results: machineNodes } = await db.prepare(query).bind(ip, now, adminUser, now).all();
         
-        // 内部链式转发 (Dokodemo-door) 的目标解析
         for (let node of machineNodes) {
             if (node.protocol === "dokodemo-door" && node.relay_type === "internal") {
                 const targetNode = await db.prepare("SELECT * FROM nodes WHERE id = ?").bind(node.target_id).first();
@@ -127,7 +122,7 @@ export async function onRequest(context) {
         return Response.json({ success: true, configs: machineNodes });
     }
 
-    // [接口 3] 全量聚合订阅接口 (动态拼接 6 大协议，物理隔离越权)
+    // [3] 全量聚合订阅接口 (动态拼接 6 大客户端协议)
     if (action === "sub" && method === "GET") {
         const ip = url.searchParams.get("ip");
         const reqUser = url.searchParams.get("user");
@@ -147,7 +142,6 @@ export async function onRequest(context) {
         let query;
         let sqlParams = [now];
 
-        // 管理员拉取全量，普通用户只能拉取自己名下正常的节点
         if (reqUser === adminUser) {
             query = `SELECT * FROM nodes WHERE enable = 1 AND (traffic_limit = 0 OR traffic_used < traffic_limit) AND (expire_time = 0 OR expire_time > ?) AND (username = ? OR username = 'admin')`;
             sqlParams.push(adminUser);
@@ -179,18 +173,19 @@ export async function onRequest(context) {
                 subLinks.push(`hysteria2://${node.uuid}@${node.vps_ip}:${node.port}/?insecure=1&sni=${node.sni}#${remark}-Hy2`);
             } else if (node.protocol === "TUIC") {
                 subLinks.push(`tuic://${node.uuid}:${node.private_key}@${node.vps_ip}:${node.port}?sni=${node.sni}&congestion_control=bbr&alpn=h3#${remark}-TUIC`);
-            } else if (node.protocol === "VLESS-Argo") {
-                subLinks.push(`vless://${node.uuid}@${node.sni}:443?encryption=none&security=tls&type=ws&host=${node.sni}&path=%2F#${remark}-Argo`);
             } else if (node.protocol === "Socks5") {
                 const auth = btoa(`${node.uuid}:${node.private_key}`);
                 subLinks.push(`socks5://${auth}@${node.vps_ip}:${node.port}#${remark}-Socks5`);
+            } else if (node.protocol === "VLESS-Argo" && !node.sni.includes('等待')) {
+                // Argo 必须在 VPS 成功抓取并回传了临时域名后，才下发订阅
+                subLinks.push(`vless://${node.uuid}@${node.sni}:443?encryption=none&security=tls&type=ws&host=${node.sni}&path=%2F#${remark}-Argo`);
             }
         }
 
         return new Response(btoa(unescape(encodeURIComponent(subLinks.join('\n')))), { headers: { "Content-Type": "text/plain; charset=utf-8" }});
     }
 
-    // [接口 4] 面板登录接口 (触发双轨制判定和数据库热升级)
+    // [4] 面板登录接口 (触发双轨制判定和数据库热升级)
     if (action === "login" && method === "POST") {
         const username = await verifyAuth(request.headers.get("Authorization"), db, env);
         if (username) {
@@ -208,7 +203,6 @@ export async function onRequest(context) {
     if (!currentUser) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     try {
-        // 全量数据拉取 (普通用户只能看到自己的)
         if (action === "data") {
             const servers = (await db.prepare("SELECT * FROM servers").all()).results;
             const nodes = isAdmin ? (await db.prepare("SELECT * FROM nodes").all()).results : (await db.prepare("SELECT * FROM nodes WHERE username = ?").bind(currentUser).all()).results;
@@ -216,14 +210,12 @@ export async function onRequest(context) {
             return Response.json({ servers, nodes, users });
         }
         
-        // 7天图表历史数据拉取 (仅管理员)
         if (action === "stats" && method === "GET" && isAdmin) {
             const query = `SELECT strftime('%m-%d', datetime(timestamp / 1000, 'unixepoch', 'localtime')) as day, SUM(delta_bytes) as total_bytes FROM traffic_stats WHERE ip = ? AND timestamp > ? GROUP BY day ORDER BY day ASC`;
             const { results } = await db.prepare(query).bind(url.searchParams.get("ip"), Date.now() - 604800000).all();
             return Response.json(results || []);
         }
         
-        // 用户 CRUD (仅管理员)
         if (action === "users" && isAdmin) {
             if (method === "POST") {
                 const { username, password, traffic_limit, expire_time } = await request.json();
@@ -240,13 +232,11 @@ export async function onRequest(context) {
             if (method === "DELETE") {
                 const target = url.searchParams.get("username");
                 await db.prepare("DELETE FROM users WHERE username = ?").bind(target).run();
-                // 兜底回收：删除用户后，其名下的节点所有权收回给当前管理员
                 await db.prepare("UPDATE nodes SET username = ? WHERE username = ?").bind(currentUser, target).run();
                 return Response.json({ success: true });
             }
         }
         
-        // 机器增删 (仅管理员)
         if (action === "vps" && isAdmin) {
             if (method === "POST") {
                 const { ip, name } = await request.json();
@@ -255,7 +245,6 @@ export async function onRequest(context) {
             }
             if (method === "DELETE") {
                 const ip = url.searchParams.get("ip");
-                // 修复 D1 无法外键级联删除的 Bug，手动连坐清理所有相关垃圾数据
                 await db.batch([
                     db.prepare("DELETE FROM nodes WHERE vps_ip = ?").bind(ip),
                     db.prepare("DELETE FROM traffic_stats WHERE ip = ?").bind(ip),
@@ -265,7 +254,6 @@ export async function onRequest(context) {
             }
         }
 
-        // 节点 CRUD (仅管理员)
         if (action === "nodes" && isAdmin) {
             if (method === "POST") {
                 const n = await request.json();
@@ -301,7 +289,6 @@ export async function onRequestScheduled(context) {
     const db = env.DB;
     const nowMs = Date.now();
     try {
-        // 查找超过 3 分钟未上报且尚未发送过告警的机器
         const { results } = await db.prepare(`SELECT ip, name, last_report FROM servers WHERE last_report < ? AND alert_sent = 0`).bind(nowMs - 180000).all();
         if (results && results.length > 0) {
             const tgBotToken = env.TG_BOT_TOKEN; const tgChatId = env.TG_CHAT_ID;
