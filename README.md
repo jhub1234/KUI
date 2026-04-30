@@ -1,91 +1,95 @@
-# 🚀 KUI Serverless Cluster Gateway
+# KUI Serverless Cluster Gateway | 极速聚合网关面板 🚀
 
-<div align="center">
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-v1.0-green.svg)
+![Architecture](https://img.shields.io/badge/architecture-Serverless-orange.svg)
 
-![Cloudflare Pages](https://img.shields.io/badge/Deployed_on-Cloudflare_Pages-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)
-![Vue.js](https://img.shields.io/badge/Frontend-Vue3-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white)
-![Python](https://img.shields.io/badge/Agent-Python3-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+KUI 是一款基于 **Cloudflare Pages + D1 数据库** 构建的轻量级、无服务器（Serverless）多节点代理聚合管理面板。配合极简的 Python 探针，能够实现单机/多机节点的一键接入、流量监控、多用户管理以及 **FSCARMEN 级别的 8 合 1 极速协议部署**。
 
-**下一代轻量级、全协议、零运维的 Serverless VPS 聚合管理与节点下发网关。**
+特别感谢@FSCARMEN https://github.com/fscarmen/sing-box 加速实现多协议的部署
+---
 
-[部署指南](#-闪电部署) • [核心特性](#-核心黑科技) • [探针架构](#-硬核原生探针) • [UI 预览](#-果味高颜面板)
+## ✨ 核心特性
 
-</div>
+- ☁️ **完全 Serverless 化**: 控制端部署于 Cloudflare Pages，数据存储于 CF D1 数据库。永远在线，免维护，零服务器成本。
+- 🚀 **FSCARMEN 极速 8 合 1 下发**: 彻底抛弃繁琐的手动配置。输入一个起始端口，系统自动并发生成 8 大防封锁协议矩阵（`XTLS-Reality`, `Hysteria2`, `TUIC`, `Trojan`, `H2-Reality`, `gRPC-Reality`, `AnyTLS`, `Naive`）。
+- 👥 **精细化多用户管理**: 支持多用户创建、独立流量配额（GB）、到期时间限制。
+- 🔗 **订阅令牌解耦安全机制**: 用户的登录密码与节点订阅 Token 完全分离。一旦订阅泄露，可一键重置订阅 Token，旧链接瞬间作废，且不影响用户登录面板。
+- 📊 **毫秒级全息监控**: 面板开启时自动触发探针“极速心跳模式”。实时回传 CPU、内存、硬盘、上下行网速及节点流量消耗，内置 Echarts 实现 7 天流量趋势图。
+- 🔔 **智能巡检与 TG 告警**: 依托 Cloudflare Cron 定时触发器，节点失联超过 3 分钟自动向 Telegram 发送宕机告警。
+- 🔄 **数据库热升级**: 后端代码内置 Schema 热修复引擎。更新后端代码后，数据库表结构和新字段会自动无缝升级，无需手动删表重建。
 
 ---
 
-## 💡 项目初衷
+## 🏗️ 架构设计
 
-天下苦传统面板久矣！复杂的 Docker 部署、沉重的 MySQL 数据库、繁琐的节点协议配置……
-**KUI** 诞生于极致的 Serverless 理念：**将主控端完全托管于 Cloudflare 边缘网络，VPS 仅需运行极致轻量的纯 Python 探针。** 
-
-这不仅意味着**主控端永远免费、永不宕机、且极度隐蔽**，更意味着你可以通过一个绝美的可视化面板，轻松驾驭多台机器上的 7 大前沿代理协议。
-
-## ✨ 核心黑科技
-
-- ☁️ **100% Serverless 主控**：基于 Cloudflare Pages/Workers + D1 数据库。**绝对零配置部署**，无需手动执行 SQL 建表，首次登录面板全自动完成数据库初始化与热升级。
-- 🔮 **全协议制霸 (7-in-1)**：完美支持 `VLESS`、`Reality`、`Hysteria 2`、`TUIC v5`、`Socks5` 以及 `Dokodemo-door (内部链式/公网转发)`。面板一键下发，VPS 探针自动拉取并无损重载 Sing-box。
-- ⚡️ **VLESS-Argo 全自动穿透救砖**：遇到纯 IPV6 或被墙机器？下发 Argo 协议后，探针将在后台静默下载 `cloudflared`，自动建立内网穿透隧道，并在 15 秒内疯狂抓取 `.trycloudflare.com` 临时域名回传至面板！
-- 🛡️ **双轨制与多租户隔离**：
-  - **军工级鉴权**：动态 HMAC-SHA256 签名，5 分钟时间戳防重放攻击。
-  - **多租户管理**：支持给不同用户分配专属节点、流量配额 (GB) 及到期时间限制。
-- 🤖 **Telegram 全自动巡检**：利用 CF 定时触发器 (Cron)，节点掉线超过 3 分钟自动推送 TG 告警。
-
-## 📊 硬核原生探针 (Agent)
-
-KUI 的 VPS 探针彻底抛弃了依赖繁杂的 Bash 命令，采用**纯 Python 读取 Linux 内核文件**的极致方案，并搭配智能跨系统一键部署脚本：
-
-- **绝对兼容与自动换源**：完美适配 **Ubuntu 18-24 / Debian 10-13 / Alpine Linux**，智能识别 `systemd` 与 `OpenRC`。脚本部署时强制全自动替换为**阿里云极速镜像源**，杜绝卡进度。
-- **高阶内核级监控**：不仅监控 CPU 和内存，还能精准抓取**磁盘使用率 (Disk)、系统负载 (Load)、精准运行时长 (Uptime) 以及毫秒级双向网络速率 (Up/Down Speed)**。
-- **全自动自签证书**：下发 Hysteria2 或 TUIC 时，探针全自动调用 OpenSSL 签发域名证书，全程无感。
-
-## 🎨 果味高颜面板 (Apple Glassmorphism)
-
-告别土味后台，KUI 采用了基于 TailwindCSS 构建的极致拟物毛玻璃 UI：
-- 仪表盘大厅实时展示全网机器在线状态与聚合大流量。
-- 丝滑的动画过渡与 Echarts 7 天流量趋势可视化。
-- 响应式动态外链导航栏，完美适配手机小屏幕操作。
+1. **Center Panel (Cloudflare Pages)**: 负责 UI 渲染、API 鉴权、D1 数据库读写、订阅链接下发。
+2. **Node Agent (Python)**: 运行在各个 VPS 上（`agent.py`）。通过主动发起 HTTP 请求拉取最新的节点配置，并动态编译生成 Sing-box 标准 `config.json`，同时定期上报机器状态。
 
 ---
 
-## 🚀 闪电部署
+## 🚀 部署指南
 
-### Step 1: 准备 Cloudflare D1 数据库
-1. 登录 Cloudflare 控制台，进入 `Workers & Pages` -> `D1`。
-2. 点击“创建数据库”，命名为 `kui-db`（创建后即可退出，**无需执行任何建表操作**）。
+### 第一步：部署控制端 (Cloudflare Pages)
 
-### Step 2: 部署主控端 (Cloudflare Pages)
-1. Fork 本仓库到你的 Github。
-2. 在 Cloudflare 控制台左侧进入 `Workers & Pages`，点击 `创建` -> `Pages` -> `连接到 Git`。
-3. 选择你 Fork 的仓库进行部署，框架预设选择 `None`。
-4. **绑定数据库与变量** (进入已部署的 Pages 项目 `设置`)：
-   - **函数 -> D1 数据库绑定**：将变量名设为 `DB`，并选择刚才创建的 `kui-db`。
-   - **环境变量**：添加以下变量：
-     - `ADMIN_USERNAME`: 你的管理员账号（默认填写 `admin` 即可）
-     - `ADMIN_PASSWORD`: 你的管理员密码（**必填**，否则无法登录）
-     - *(可选)* `TG_BOT_TOKEN`: 你的 Telegram Bot Token（用于掉线告警）
-     - *(可选)* `TG_CHAT_ID`: 接收告警的 TG 频道或用户 ID
+1. Fork 本仓库。
+2. 登录 Cloudflare Dashboard，进入 **Workers & Pages** -> **创建应用程序** -> **Pages** -> **连接到 Git**。
+3. 选择你的仓库，构建设置留空即可（纯 HTML/JS/API）。
+4. 在项目设置中，绑定一个 **D1 数据库**，变量名**必须**为 `DB`。
+5. 设置以下 **环境变量 (Environment Variables)**：
+   - `ADMIN_USERNAME`: 管理员账号（例：`admin`）
+   - `ADMIN_PASSWORD`: 管理员密码（例：`your_strong_password`）
+   - `TG_BOT_TOKEN`: （可选）Telegram Bot Token，用于接收掉线告警。
+   - `TG_CHAT_ID`: （可选）你的 Telegram Chat ID。
+6. 重新部署一次 Pages 即可生效。
 
-### Step 3: 零配置初始化
-浏览器访问你的 Pages 域名，输入设置的账号密码登入。
-**系统将瞬间在后台为你全自动建表并完成所有初始化配置！**
+### 第二步：部署被控端 (VPS 节点)
+
+在面板中以管理员身份登录，进入【服务器与节点】模块，输入 VPS 别名和 IP 建立档案。
+点击对应机器下的 **“Deploy Command”**，复制系统生成的一键安装脚本，到你的 VPS 上执行即可。
+
+*一键脚本示例 (自动适配 Ubuntu/Debian/Alpine)：*
+```bash
+apt-get update -y && apt-get install -y curl && bash <(curl -sL [https://raw.githubusercontent.com/a62169722/KUI/main/vps/kui.sh](https://raw.githubusercontent.com/a62169722/KUI/main/vps/kui.sh)) --api "你的CF_Pages域名" --ip "机器IP" --token "面板自动生成的Hash鉴权"
+```
 
 ---
 
-## 💻 探针接入指南
+## 📖 使用说明
 
-在 KUI 面板进入“服务器与节点”板块：
-1. 输入你的 VPS **名称**和**公网 IP**。
-2. 在下拉框中选择你的系统架构（`Ubuntu/Debian` 或 `Alpine Linux`）。
-3. 点击“接入机器”后，复制生成的单行一键安装指令。
-4. 登录到你的 VPS 终端，粘贴并执行该指令。
+### 极速 8 合 1 节点矩阵部署
+1. 节点机器接入成功并显示在线后，在面板中找到该机器。
+2. 找到 **“极速全量节点下发”** 模块。
+3. 选择该节点矩阵的【归属用户】。
+4. 输入【起始端口】（推荐使用 `8881`）。
+5. 点击 **🚀 爆发下发**。
+6. 等待约 10~15 秒，探针下一次心跳交互时，将自动为您拉起底层的全部 Sing-box 协议引擎。
 
-部署完毕后，面板上的该机器指示灯将在 1 分钟内转为绿色 🟢，四宫格实时监控数据瞬间点亮！
+### 客户端订阅
+点击右上角 **“🔗 复制订阅”**，将链接导入至 v2rayN、Clash Verge、Shadowrocket 等主流客户端即可自动解析（内置防封锁 SNI 与 16 字节高强度密码算法）。
 
-## ⚠️ 免责声明
+---
 
-本项目仅供编程学习与网络架构研究使用。请严格遵守您所在国家或地区的法律法规，请勿用于任何非法用途。开发者不对使用本项目造成的任何后果负责。
+## 目录结构说明
+```text
+├── index.html                  # 纯前端 UI (Vue3 + TailwindCSS + Echarts)
+├── functions/
+│   └── api/
+│       └── [[path]].js         # CF Pages 后端核心 API (路由、鉴权、D1读写、订阅生成)
+└── vps/
+    ├── kui.sh                  # 被控端环境初始化守护脚本
+    └── agent.py                # 被控端核心探针引擎 (协议编译、心跳上报)
+```
 
-## 📄 License
-[MIT](LICENSE) © KUI Contributors
+---
+
+## ⚠️ 声明
+
+本项目仅供学习 Serverless 架构与网络协议原理使用。请遵守您所在国家和地区的法律法规，勿用于非法用途。
+
+---
+
+> 觉得好用的话，欢迎点个 ⭐ **Star** 支持一下！如果有任何问题或建议，欢迎提交 Issue 或 Pull Request。
+```
+
+直接贴进去，这个排版不仅高大上，而且把你系统里的核心卖点（如“Token解耦”、“D1热升级”、“TG告警”、“8合1下发”）全都写得清清楚楚，完美展现了这个项目的价值！
