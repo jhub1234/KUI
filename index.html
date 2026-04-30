@@ -185,12 +185,12 @@
 
                             <div class="px-6 md:px-8 pb-4">
                                 
-                                <!-- 🌟 彻底净化后的 FSCARMEN 极速全家桶部署模块 -->
+                                <!-- 🌟 彻底强化：FSCARMEN 全系 12 大协议极速部署模块 -->
                                 <div class="bg-indigo-50/70 border-2 border-dashed border-indigo-200 p-6 rounded-[1.5rem] mb-2 relative overflow-hidden group shadow-sm hover:border-indigo-300 transition-all">
                                     <div class="absolute top-0 right-0 bg-indigo-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl shadow-sm">FSCARMEN QUICK INSTALL</div>
-                                    <h4 class="font-black text-indigo-800 text-lg mb-2 flex items-center gap-2">🚀 极速一键全家桶下发</h4>
+                                    <h4 class="font-black text-indigo-800 text-lg mb-2 flex items-center gap-2">🚀 极速全量节点下发 (12合1)</h4>
                                     <p class="text-xs text-indigo-500/80 font-bold mb-5 leading-relaxed">
-                                        全面废除老旧单节点表单！只需填写初始端口，系统将按 FSCARMEN 逻辑自动为您批量生成所有协议矩阵 (Reality / Hysteria2 / TUIC / VLESS / Socks5) 并发往节点端。
+                                        输入起始端口，系统将采用 FSCARMEN 算法依次为您生成全部 12 个协议阵列：XTLS+Reality, Hysteria2, TUIC, ShadowTLS, Shadowsocks, Trojan, VMess+WS, VLESS+WS+TLS, H2+Reality, gRPC+Reality, AnyTLS, Naive。
                                     </p>
                                     
                                     <div class="flex flex-col md:flex-row gap-4 mb-2">
@@ -206,12 +206,63 @@
                                             <input v-model="batchStartPort[vps.ip]" type="number" placeholder="例如: 8881" class="w-full bg-white border border-indigo-100 p-3.5 rounded-xl outline-none text-sm font-mono text-indigo-900 focus:shadow-md transition">
                                         </div>
                                         <div class="flex items-end">
-                                            <button @click="deployAllProtocols(vps.ip)" class="h-[50px] bg-gradient-to-r from-indigo-500 to-blue-600 text-white px-8 rounded-xl text-sm font-black shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all whitespace-nowrap">🚀 一键下发</button>
+                                            <button @click="deployAllProtocols(vps.ip)" class="h-[50px] bg-gradient-to-r from-indigo-500 to-blue-600 text-white px-8 rounded-xl text-sm font-black shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all whitespace-nowrap">🚀 爆发下发</button>
                                         </div>
                                     </div>
                                 </div>
-                                <!-- 🌟 模块结束 -->
+                                <!-- 🌟 极速全量模块结束 -->
 
+                                <!-- 保留手动精细化表单供特殊场景使用，并补全所有协议 -->
+                                <div class="bg-gradient-to-br from-white/80 to-white/40 p-5 rounded-[1.5rem] border border-white shadow-sm mt-4">
+                                    <div class="text-xs font-bold text-slate-400 mb-2 pl-1">手动单节点精细化下发</div>
+                                    <select v-model="newNodeParams[vps.ip].username" class="w-full border-none bg-indigo-50/50 text-indigo-700 font-bold text-sm p-3 rounded-xl outline-none mb-3">
+                                        <option value="admin">👤 归属权: 管理员自身</option>
+                                        <option v-for="u in users" :value="u.username">👤 归属权: {{ u.username }}</option>
+                                    </select>
+                                    
+                                    <div class="flex gap-3 mb-3">
+                                        <select v-model="newNodeParams[vps.ip].protocol" class="border-none bg-slate-100/50 text-slate-700 text-sm p-3 rounded-xl flex-1 outline-none font-medium">
+                                            <option value="XTLS-Reality">XTLS + Reality</option>
+                                            <option value="Hysteria2">Hysteria2 (极速)</option>
+                                            <option value="TUIC">TUIC v5 (高并发)</option>
+                                            <option value="ShadowTLS">ShadowTLS</option>
+                                            <option value="Shadowsocks">Shadowsocks</option>
+                                            <option value="Trojan">Trojan</option>
+                                            <option value="VMess-WS">VMess + WS</option>
+                                            <option value="VLESS-WS-TLS">VLESS + WS + TLS</option>
+                                            <option value="H2-Reality">H2 + Reality</option>
+                                            <option value="gRPC-Reality">gRPC + Reality</option>
+                                            <option value="AnyTLS">AnyTLS</option>
+                                            <option value="Naive">Naive</option>
+                                            <option disabled>──────────</option>
+                                            <option value="VLESS-Argo">VLESS Argo (全自动穿透)</option>
+                                            <option value="dokodemo-door">Dokodemo (内部转发)</option>
+                                        </select>
+                                        <input v-model="newNodeParams[vps.ip].port" type="number" placeholder="端口" class="bg-slate-100/50 text-slate-700 text-sm p-3 rounded-xl w-24 outline-none font-mono">
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-3 mb-3">
+                                        <div class="bg-slate-100/50 p-3 rounded-xl"><label class="block text-[10px] text-slate-400 font-bold mb-1">配额(GB, 0无限)</label><input v-model="newNodeParams[vps.ip].traffic_limit_gb" type="number" class="w-full text-sm bg-transparent outline-none font-bold text-slate-700"></div>
+                                        <div class="bg-slate-100/50 p-3 rounded-xl"><label class="block text-[10px] text-slate-400 font-bold mb-1">到期日(留空永久)</label><input v-model="newNodeParams[vps.ip].expire_date" type="date" class="w-full text-sm bg-transparent outline-none font-bold text-slate-700"></div>
+                                    </div>
+
+                                    <div v-if="['XTLS-Reality', 'H2-Reality', 'gRPC-Reality'].includes(newNodeParams[vps.ip].protocol)" class="bg-slate-100/50 p-3 rounded-xl mb-3">
+                                        <input v-model="newNodeParams[vps.ip].sni" :list="'sni-rec-' + vps.ip" placeholder="伪装域名: 支持手填或下拉" class="w-full bg-transparent outline-none text-sm font-medium text-slate-700">
+                                        <datalist :id="'sni-rec-' + vps.ip">
+                                            <option value="addons.mozilla.org"></option>
+                                            <option value="www.apple.com"></option>
+                                            <option value="gateway.icloud.com"></option>
+                                            <option value="itunes.apple.com"></option>
+                                            <option value="www.microsoft.com"></option>
+                                        </datalist>
+                                    </div>
+                                    
+                                    <div v-if="['TUIC', 'Hysteria2', 'ShadowTLS', 'Trojan', 'VLESS-WS-TLS', 'VMess-WS', 'AnyTLS', 'Naive'].includes(newNodeParams[vps.ip].protocol)" class="bg-slate-100/50 p-3 rounded-xl mb-3">
+                                        <input v-model="newNodeParams[vps.ip].sni" placeholder="SNI 域名 / 主机名" class="w-full bg-transparent outline-none text-sm font-medium text-slate-700">
+                                    </div>
+                                    
+                                    <button @click="addNode(vps.ip)" class="w-full bg-gradient-to-r from-slate-800 to-black text-white py-3 rounded-xl font-bold shadow-lg transition-all hover:scale-[1.02]">添加单节点</button>
+                                </div>
                             </div>
 
                             <div class="p-6 md:p-8 bg-slate-50/50 border-t border-white flex-1">
@@ -224,7 +275,7 @@
                                                 <span v-if="node.enable === 0" class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-bold">已停用</span>
                                             </div>
                                             <div v-if="node.protocol === 'VLESS-Argo'" class="text-[11px] p-1.5 rounded-lg overflow-hidden text-ellipsis whitespace-nowrap max-w-full inline-block" :class="node.sni.includes('等待') ? 'bg-amber-50 text-amber-600 animate-pulse font-bold' : 'bg-emerald-50 border border-emerald-100 text-emerald-700 font-mono font-bold'">Argo: {{ node.sni }}</div>
-                                            <div v-else-if="node.protocol === 'TUIC' || node.protocol === 'Reality' || node.protocol === 'Hysteria2'" class="text-[11px] bg-slate-50 text-slate-500 p-1.5 rounded-lg overflow-hidden text-ellipsis font-mono inline-block">SNI: {{ node.sni }}</div>
+                                            <div v-else-if="node.sni" class="text-[11px] bg-slate-50 text-slate-500 p-1.5 rounded-lg overflow-hidden text-ellipsis font-mono inline-block">SNI: {{ node.sni }}</div>
                                         </div>
                                         <div class="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button @click="toggleNode(node.id, node.enable === 1 ? 0 : 1)" class="text-[11px] px-2 py-1 rounded-md bg-white border border-slate-200 hover:bg-slate-50 font-bold text-slate-600 shadow-sm">{{ node.enable === 1 ? '停用' : '启用' }}</button>
@@ -355,6 +406,7 @@
                 const activeTab = ref(''); const servers = ref([]); const nodes = ref([]); const users = ref([]);
                 
                 const newVps = ref({ name: '', ip: '', os: 'debian' }); 
+                const newNodeParams = reactive({});
                 const newUser = reactive({ username: '', password: '', traffic_limit_gb: '', expire_date: '' });
                 const currentDomain = window.location.origin;
 
@@ -422,6 +474,7 @@
                         if (data.mySubToken) mySubToken.value = data.mySubToken;
 
                         servers.value.forEach(s => { 
+                            if(!newNodeParams[s.ip]) newNodeParams[s.ip] = { protocol: 'XTLS-Reality', port: 443, username: 'admin', sni: '', relay_type: 'external', traffic_limit_gb: '', expire_date: '' }; 
                             if(!deployOsMap[s.ip]) deployOsMap[s.ip] = 'debian';
                             if(!batchStartPort[s.ip]) batchStartPort[s.ip] = '';
                             if(!batchUser[s.ip]) batchUser[s.ip] = 'admin';
@@ -466,8 +519,55 @@
                     refreshData(); 
                 };
                 const deleteVps = async (ip) => { if(confirm('🧨 确定移除该机器？所有数据将被清空！')) { await fetchApi(`/api/vps?ip=${ip}`, { method: 'DELETE' }); refreshData(); } };
+
+                // ================= 单节点下发 =================
+                const addNode = async (ip) => {
+                    const p = newNodeParams[ip]; if(!p.port) return alert('请填写端口!');
+                    let limitBytes = p.traffic_limit_gb ? Math.floor(parseFloat(p.traffic_limit_gb) * 1073741824) : 0; 
+                    let expireTs = p.expire_date ? new Date(p.expire_date).getTime() : 0;
+                    
+                    const payload = { 
+                        id: Date.now().toString(), 
+                        uuid: crypto.randomUUID(), 
+                        vps_ip: ip, 
+                        protocol: p.protocol, 
+                        port: p.port, 
+                        username: p.username, 
+                        traffic_limit: limitBytes, 
+                        expire_time: expireTs,
+                        sni: p.sni || ''
+                    };
+                    
+                    if (['XTLS-Reality', 'H2-Reality', 'gRPC-Reality'].includes(p.protocol)) { 
+                        const keys = generateRealityKeys(); 
+                        payload.private_key = keys.privateKey; 
+                        payload.public_key = keys.publicKey; 
+                        payload.short_id = keys.shortId; 
+                    } else if (p.protocol === 'TUIC') { 
+                        if (!p.sni) return alert('TUIC 必填 SNI！'); 
+                        payload.private_key = crypto.randomUUID().replace(/-/g, ''); 
+                    } else if (p.protocol === 'ShadowTLS' || p.protocol === 'Shadowsocks' || p.protocol === 'Trojan' || p.protocol === 'AnyTLS') {
+                        payload.private_key = crypto.randomUUID().replace(/-/g, ''); // 密码字段复用
+                    } else if (p.protocol === 'Naive') {
+                        payload.uuid = crypto.randomUUID().replace(/-/g, '').substring(0, 16); // User
+                        payload.private_key = payload.uuid; // Pass
+                    } else if (p.protocol === 'VLESS-Argo') { 
+                        payload.sni = '⏳ 正在等待 VPS 自动回传穿透域名...'; 
+                    } else if (p.protocol === 'dokodemo-door') { 
+                        payload.relay_type = p.relay_type; 
+                        if (p.relay_type === 'external') { 
+                            payload.target_ip = p.target_ip; 
+                            payload.target_port = p.target_port; 
+                        } else { 
+                            payload.target_id = p.target_id; 
+                        } 
+                    }
+                    
+                    await fetchApi('/api/nodes', { method: 'POST', body: JSON.stringify(payload) }); 
+                    refreshData();
+                };
                 
-                // 🌟 完美复刻开源脚本逻辑：极速一键全量下发
+                // 🌟 完美复刻开源脚本逻辑：极速全系 12 大协议下发
                 const deployAllProtocols = async (ip) => {
                     let startPort = parseInt(batchStartPort[ip]);
                     if (!startPort || startPort < 10 || startPort > 65000) {
@@ -478,16 +578,23 @@
                     const commonUser = batchUser[ip] || 'admin';
                     const commonUUID = crypto.randomUUID(); // 全局复用同一个 UUID
                     
-                    // 完全匹配 fscarmen 的主流核心协议矩阵和端口递增策略
+                    // 完全匹配 fscarmen 的 12 个核心协议矩阵和端口递增策略
                     const protocolSequence = [
-                        { protocol: 'VLESS', offset: 0 },
-                        { protocol: 'Reality', offset: 1, sni: defaultSni },
-                        { protocol: 'Hysteria2', offset: 2, sni: defaultSni },
-                        { protocol: 'TUIC', offset: 3, sni: defaultSni },
-                        { protocol: 'Socks5', offset: 4 }
+                        { protocol: 'XTLS-Reality', offset: 0, sni: defaultSni, type: 'reality' },
+                        { protocol: 'Hysteria2', offset: 1, sni: defaultSni },
+                        { protocol: 'TUIC', offset: 2, sni: defaultSni },
+                        { protocol: 'ShadowTLS', offset: 3, sni: defaultSni },
+                        { protocol: 'Shadowsocks', offset: 4 },
+                        { protocol: 'Trojan', offset: 5, sni: defaultSni },
+                        { protocol: 'VMess-WS', offset: 6, sni: defaultSni },
+                        { protocol: 'VLESS-WS-TLS', offset: 7, sni: defaultSni },
+                        { protocol: 'H2-Reality', offset: 8, sni: defaultSni, type: 'reality' },
+                        { protocol: 'gRPC-Reality', offset: 9, sni: defaultSni, type: 'reality' },
+                        { protocol: 'AnyTLS', offset: 10, sni: defaultSni },
+                        { protocol: 'Naive', offset: 11, sni: defaultSni }
                     ];
 
-                    const confirmMsg = `🚀 极速部署确认：\n\n系统将按照 FSCARMEN 模式，向该服务器并发下发 ${protocolSequence.length} 个核心协议：\n` + 
+                    const confirmMsg = `🚀 极速部署确认：\n\n系统将按照 FSCARMEN 模式，向该服务器并发下发完整 ${protocolSequence.length} 个协议矩阵：\n` + 
                                     protocolSequence.map(p => `- ${p.protocol} (端口: ${startPort + p.offset})`).join('\n') +
                                     `\n\n所有节点归属: ${commonUser}\n\n确认立刻组建节点矩阵吗？`;
 
@@ -503,23 +610,21 @@
                             port: startPort + item.offset, 
                             username: commonUser, 
                             traffic_limit: 0, 
-                            expire_time: 0 
+                            expire_time: 0,
+                            sni: item.sni || ''
                         };
                         
-                        if (item.protocol === 'Reality') { 
+                        if (item.type === 'reality') { 
                             const keys = generateRealityKeys(); 
-                            payload.sni = item.sni; 
                             payload.private_key = keys.privateKey; 
                             payload.public_key = keys.publicKey; 
                             payload.short_id = keys.shortId; 
-                        } else if (item.protocol === 'Hysteria2') { 
-                            payload.sni = item.sni; 
-                        } else if (item.protocol === 'TUIC') { 
-                            payload.sni = item.sni; 
-                            payload.private_key = crypto.randomUUID(); 
-                        } else if (item.protocol === 'Socks5') {
-                            payload.uuid = commonUUID.replace(/-/g, '').substring(0, 8); 
-                            payload.private_key = crypto.randomUUID().replace(/-/g, '').substring(0, 12); 
+                        } else if (item.protocol === 'Naive') {
+                            payload.uuid = commonUUID.replace(/-/g, '').substring(0, 16); 
+                            payload.private_key = payload.uuid;
+                        } else {
+                            // 给 TUIC, ShadowTLS, SS, Trojan, AnyTLS 提供高强度密码复用
+                            payload.private_key = crypto.randomUUID().replace(/-/g, ''); 
                         }
                         
                         try {
@@ -530,7 +635,7 @@
                     }
 
                     batchStartPort[ip] = ''; // 清空输入框
-                    alert("✅ 极速全家桶部署指令已发送！\n\n远端探针将在约十秒后的心跳中自动拉取配置，并使用成熟的底层环境启动所有引擎，请稍候。");
+                    alert("✅ 极速 12合1 全家桶部署指令已发送！\n\n远端探针将在约十秒后的心跳中自动拉取配置，并使用成熟的底层环境启动所有引擎，请稍候。");
                     refreshData();
                 };
 
@@ -598,11 +703,11 @@
                 return { 
                     isLoggedIn, loginUser, password, currentUser, role, activeTab, 
                     servers, nodes, users, 
-                    newVps, // <--- 这里补回来了，绝对不会再崩溃了！
+                    newVps, newNodeParams, // 手动添加节点所需变量
                     newUser, 
                     login, logout, refreshData, 
                     addUser, toggleUser, deleteUser, resetUserTraffic, 
-                    addVps, deleteVps, 
+                    addVps, deleteVps, addNode,
                     deleteNode, toggleNode, resetTraffic, 
                     getNodesByIp, getVpsName, 
                     formatBytes, formatDate, getTrafficPercent, isOnline, 
