@@ -34,28 +34,32 @@
         <!-- ================= 面板主界面 ================= -->
         <div v-else class="space-y-8 animate-fade-in">
             
-            <div class="bg-white/70 backdrop-blur-xl border border-white/80 p-4 md:px-8 rounded-[2rem] md:rounded-full shadow-xl shadow-slate-200/50 flex flex-col xl:flex-row justify-between items-center sticky top-4 z-50 gap-4">
+            <!-- 🌟 重新布局：完美分离左右侧，绝对不会遮挡 -->
+            <div class="bg-white/70 backdrop-blur-xl border border-white/80 p-4 md:px-6 rounded-[2rem] shadow-xl shadow-slate-200/50 flex flex-col lg:flex-row justify-between items-center sticky top-4 z-50 gap-4">
                 
-                <h1 class="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 shrink-0">
-                    <template v-if="siteTitle && siteTitle !== 'Cluster Gateway'">{{ siteTitle }}</template>
-                    <template v-else>Cluster <span class="font-medium text-slate-400">Gateway</span></template>
-                </h1>
-                
-                <!-- 🌟 重新布局：修复被标题盖住的问题，增加漂亮的小竖线分割 -->
-                <div class="flex flex-wrap justify-center gap-2 md:gap-3 items-center w-full xl:w-auto">
-                    <a href="https://www.youtube.com/@%E7%A7%91%E6%8A%80KKK" target="_blank" class="bg-white/50 hover:bg-white/90 border border-slate-200 px-3 py-2 rounded-full text-xs font-bold text-slate-600 hover:text-rose-600 transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                <!-- 左侧区域：Logo + 外链 -->
+                <div class="flex flex-wrap justify-center lg:justify-start items-center gap-3 md:gap-4 w-full lg:w-auto">
+                    <h1 class="text-xl md:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 shrink-0">
+                        <template v-if="siteTitle && siteTitle !== 'Cluster Gateway'">{{ siteTitle }}</template>
+                        <template v-else>Cluster Gateway</template>
+                    </h1>
+                    
+                    <div class="hidden md:block w-px h-6 bg-slate-300"></div>
+                    
+                    <a href="https://www.youtube.com/@%E7%A7%91%E6%8A%80KKK" target="_blank" class="bg-white/60 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-full text-xs font-bold text-slate-600 hover:text-rose-600 transition-all shadow-sm">
                         📺 Youtube频道
                     </a>
-                    <a href="https://github.com/a62169722/KUI" target="_blank" class="bg-white/50 hover:bg-white/90 border border-slate-200 px-3 py-2 rounded-full text-xs font-bold text-slate-600 hover:text-slate-900 transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                    <a href="https://github.com/a62169722/KUI" target="_blank" class="bg-white/60 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-full text-xs font-bold text-slate-600 hover:text-slate-900 transition-all shadow-sm">
                         🐙 Github仓库
                     </a>
-                    
-                    <div class="w-px h-6 bg-slate-200 hidden md:block mx-1"></div>
-                    
-                    <span class="text-xs font-bold text-emerald-500 bg-emerald-100/50 px-3 py-2 rounded-full border border-emerald-200 animate-pulse flex items-center gap-1">🟢 实时监控中</span>
-                    <button v-if="role === 'admin'" @click="copyCommand(generateSubLink(''), '全量聚合订阅已复制！')" class="bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all">🔗 复制全量订阅</button>
-                    <button @click="refreshData" class="bg-white/50 hover:bg-white/80 border border-slate-200 px-3 py-2 rounded-full text-xs font-medium transition-all shadow-sm">🔄 刷新</button>
-                    <button @click="logout" class="text-rose-500 hover:bg-rose-50 px-3 py-2 rounded-full text-xs font-bold transition-all">退出</button>
+                </div>
+                
+                <!-- 右侧区域：操作按钮 -->
+                <div class="flex flex-wrap justify-center lg:justify-end items-center gap-2 w-full lg:w-auto">
+                    <span class="text-[10px] md:text-xs font-bold text-emerald-500 bg-emerald-100/50 px-3 py-2 rounded-full border border-emerald-200 animate-pulse">🟢 实时监控中</span>
+                    <button v-if="role === 'admin'" @click="copyCommand(generateSubLink(''), '全量聚合订阅已复制！')" class="bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all">🔗 复制订阅</button>
+                    <button @click="refreshData" class="bg-white/50 hover:bg-white/80 border border-slate-200 px-4 py-2 rounded-full text-xs font-medium transition-all shadow-sm">🔄 刷新</button>
+                    <button @click="logout" class="text-rose-500 hover:bg-rose-50 px-4 py-2 rounded-full text-xs font-bold transition-all border border-transparent hover:border-rose-200">退出</button>
                 </div>
             </div>
 
