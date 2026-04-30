@@ -1,11 +1,10 @@
 #!/bin/sh
 
 # ==========================================
-# KUI Serverless 集群节点 - 智能跨系统安装脚本 (强制阿里云源版)
+# KUI Serverless 集群节点 - 智能跨系统安装脚本 (工业级加固版)
 # 支持: Ubuntu 18-24 / Debian 10-13 / Alpine Linux
 # ==========================================
 
-# 1. 解析传入的参数
 while [ "$#" -gt 0 ]; do
     case $1 in
         --api) API_URL="$2"; shift ;;
@@ -18,11 +17,9 @@ done
 
 if [ -z "$API_URL" ] || [ -z "$VPS_IP" ] || [ -z "$TOKEN" ]; then
     echo "❌ 错误: 缺少必要参数！"
-    echo "用法: sh kui.sh --api <url> --ip <ip> --token <token>"
     exit 1
 fi
 
-# 2. 智能识别操作系统
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
@@ -34,7 +31,6 @@ fi
 echo "=========================================="
 echo " 🚀 KUI Agent 智能安装启动中..."
 echo " 💻 目标系统: ${OS}"
-echo " ⚡ 镜像配置: 强制使用阿里云 (Aliyun) 极速源"
 echo "=========================================="
 
 echo "[1/6] 🧹 正在清理历史残留..."
@@ -60,26 +56,20 @@ else
     [ -f /etc/apt/sources.list ] && sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
     [ -f /etc/apt/sources.list ] && sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
     [ -f /etc/apt/sources.list ] && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
-    
-    if [ -d /etc/apt/sources.list.d ]; then
-        sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/*.list 2>/dev/null || true
-        sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list.d/*.list 2>/dev/null || true
-    fi
 fi
 
-echo "[3/6] 📦 正在安装系统底层依赖..."
+echo "[3/6] 📦 正在安装底层网络依赖 (融合 fscarmen 防火墙机制)..."
 if [ "$OS" = "alpine" ]; then
     apk update
-    # 🌟 核心修复：在此处加入了 libc6-compat 和 gcompat 防止核心二进制报错 not found
-    apk add python3 curl openssl iptables coreutils bash tar libc6-compat gcompat iproute2
+    # 🌟 修复：加入 iptables, ip6tables, iproute2 保障底层穿透
+    apk add python3 curl openssl iptables ip6tables coreutils bash tar libc6-compat gcompat iproute2
 else
     apt-get update -y
-    apt-get install -y python3 curl openssl iptables coreutils bash tar
+    apt-get install -y python3 curl openssl iptables coreutils bash tar iproute2 iputils-ping
 fi
 
 echo "[4/6] ⚙️ 部署 Sing-box 代理核心..."
 if ! command -v sing-box >/dev/null 2>&1; then
-    echo "未检测到 Sing-box，正在拉取二进制文件..."
     if [ "$OS" = "alpine" ]; then
         ARCH=$(uname -m)
         case "$ARCH" in
@@ -96,8 +86,6 @@ if ! command -v sing-box >/dev/null 2>&1; then
     else
         bash <(curl -fsSL https://sing-box.app/deb-install.sh)
     fi
-else
-    echo "✅ Sing-box 已安装，跳过下载。"
 fi
 
 echo "[5/6] 📂 初始化 KUI 工作目录与环境..."
@@ -164,5 +152,5 @@ echo "=========================================="
 echo " 🎉 KUI Agent 跨平台部署成功！"
 echo " 节点 IP: ${VPS_IP}"
 echo " 系统架构: ${OS}"
-echo " 提示: 所有依赖已通过阿里云镜像站极速完成安装。"
+echo " 提示: 所有底层防火墙及网络依赖已就绪。"
 echo "=========================================="
