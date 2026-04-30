@@ -1,6 +1,6 @@
 // ==========================================
 // KUI Serverless 聚合网关后端 - 零配置全自动建表完全体
-// (包含：系统重命名 + 独立订阅 Token 解耦 + 心跳引擎)
+// (包含：系统重命名 + 独立订阅 Token 解耦 + 心跳引擎 + SNI空值修复)
 // ==========================================
 
 async function sha256(text) {
@@ -321,9 +321,13 @@ export async function onRequest(context) {
             } else if (node.protocol === "Reality") {
                 subLinks.push(`vless://${node.uuid}@${node.vps_ip}:${node.port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${node.sni}&fp=chrome&pbk=${node.public_key}&sid=${node.short_id}&type=tcp&headerType=none#${remark}-Reality`);
             } else if (node.protocol === "Hysteria2") {
-                subLinks.push(`hysteria2://${node.uuid}@${node.vps_ip}:${node.port}/?insecure=1&sni=${node.sni}#${remark}-Hy2`);
+                // 🌟 修复：订阅链接拦截空 SNI，提供兜底
+                const hy2Sni = node.sni || "www.apple.com"; 
+                subLinks.push(`hysteria2://${node.uuid}@${node.vps_ip}:${node.port}/?insecure=1&sni=${hy2Sni}#${remark}-Hy2`);
             } else if (node.protocol === "TUIC") {
-                subLinks.push(`tuic://${node.uuid}:${node.private_key}@${node.vps_ip}:${node.port}?sni=${node.sni}&congestion_control=bbr&alpn=h3&allow_insecure=1#${remark}-TUIC`);
+                // 🌟 修复：订阅链接拦截空 SNI，提供兜底
+                const tuicSni = node.sni || "www.apple.com"; 
+                subLinks.push(`tuic://${node.uuid}:${node.private_key}@${node.vps_ip}:${node.port}?sni=${tuicSni}&congestion_control=bbr&alpn=h3&allow_insecure=1#${remark}-TUIC`);
             } else if (node.protocol === "Socks5") {
                 const auth = btoa(`${node.uuid}:${node.private_key}`);
                 subLinks.push(`socks5://${auth}@${node.vps_ip}:${node.port}#${remark}-Socks5`);
